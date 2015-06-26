@@ -1,0 +1,86 @@
+grammar {
+    use {Checkable, Context, Inferable, Info, Name};
+    use Inferable::*;
+    use Checkable::*;
+    use Name::*;
+    use Info::*;
+    use Kind::*;
+    use Type as Ty;
+    use parser::{de_bruijn_down, Tok, Stmt};
+    use parser::Stmt::*;
+    use std::collections::VecDeque;
+
+    token Tok where {
+        "(" => "LParen";
+        ")" => "RParen";
+        "->" => "Arrow";
+        "fn" => "Lambda";
+        ":" => "Colon";
+        "*" => "Star";
+        "assume" => "Assume";
+    };
+
+    pub S = Stmt;
+
+    Stmt: Stmt = {
+        "assume" ~Context => Decl(~~);
+        ~Expr => Expr(~~);
+    };
+
+    Info: Info = {
+        "*" => HasKind(Star);
+        ~Type => HasType(~~);
+    };
+
+    Binding: (Name, Info) = n:"Ident" ":" i:Info => (Global(n.as_ident()), i);
+
+    BindingList: Context = {
+        "(" ~Binding ")" => {
+            let mut v = VecDeque::new();
+            v.push_front(~~);
+            v
+        };
+        v:BindingList "(" b:Binding ")" => {
+            let mut v = v;
+            v.push_front(b);
+            v
+        };
+    };
+
+    Context = {
+        ~Binding => {
+            let mut v = VecDeque::new();
+            v.push_front(~~);
+            v
+        };
+        BindingList;
+    };
+
+    AtomicType = {
+        ~"Ident" => Ty::Free(Global(~~.as_ident()));
+        "(" ~Type ")";
+    };
+
+    Type: Ty = {
+        AtomicType;
+        t1:AtomicType "->" t2:Type => Ty::Fun(Box::new(t1), Box::new(t2));
+    };
+
+    Expr: Inferable = {
+        Inf;
+    };
+
+    Inf: Inferable = {
+        ~"Ident" => Free(Global(~~.as_ident()));
+        "(" ~Inf ")";
+        i:Inf "(" "fn" d:"Ident" "->" c:Check ")" => App(Box::new(i), Lam(Box::new(de_bruijn_down(Global(d.as_ident()), 0, c))));
+        i:Inf d:"Ident" => App(Box::new(i), Inf(Box::new(Free(Global(d.as_ident())))));
+        "(" "fn" i:"Ident" "->" c:Check ")" ":" t:Type => Ann(Lam(Box::new(de_bruijn_down(Global(i.as_ident()), 0, c))), t);
+        e:Inf ":" t:Type => Ann(Inf(Box::new(e)), t);
+    };
+
+    Check: Checkable = {
+        "fn" i:"Ident" "->" c:Check => Lam(Box::new(de_bruijn_down(Global(i.as_ident()), 0, c)));
+        ~Inf => Inf(Box::new(~~));
+    };
+}
