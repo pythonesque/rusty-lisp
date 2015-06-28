@@ -71,16 +71,24 @@ grammar {
     };
 
     Inf: Inferable = {
+        AtomInf;
+        i:Inf c:AtomCheck => App(Box::new(i), c);
+        c:AtomCheck ":" t:Type => Ann(c, t);
+        e:Inf c:AtomCheck ":" t:Type => Ann(Inf(Box::new(App(Box::new(e), c))), t);
+    };
+
+    AtomInf: Inferable = {
         ~"Ident" => Free(Global(~~.as_ident()));
         "(" ~Inf ")";
-        i:Inf "(" "fn" d:"Ident" "->" c:Check ")" => App(Box::new(i), Lam(Box::new(de_bruijn_down(Global(d.as_ident()), 0, c))));
-        i:Inf d:"Ident" => App(Box::new(i), Inf(Box::new(Free(Global(d.as_ident())))));
-        "(" "fn" i:"Ident" "->" c:Check ")" ":" t:Type => Ann(Lam(Box::new(de_bruijn_down(Global(i.as_ident()), 0, c))), t);
-        e:Inf ":" t:Type => Ann(Inf(Box::new(e)), t);
+    };
+
+    AtomCheck: Checkable = {
+        ~AtomInf => Inf(Box::new(~~));
+        "(" ~Check ")";
     };
 
     Check: Checkable = {
         "fn" i:"Ident" "->" c:Check => Lam(Box::new(de_bruijn_down(Global(i.as_ident()), 0, c)));
-        ~Inf => Inf(Box::new(~~));
+        "fn" d:"Ident" "->" i:Inf => Lam(Box::new(de_bruijn_down(Global(d.as_ident()), 0, Inf(Box::new(i)))));
     };
 }
