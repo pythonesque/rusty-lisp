@@ -64,9 +64,7 @@ grammar {
         AtomCheck;
     };
 
-    Expr: Inferable = {
-        Inf;
-    };
+    Expr: Inferable = Inf;
 
     Inf: Inferable = {
         AtomInf;

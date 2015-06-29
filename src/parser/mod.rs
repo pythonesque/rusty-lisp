@@ -29,32 +29,6 @@ fn de_bruijn_down(i: Name, r: usize, term: Checkable) -> Checkable {
     }
 }
 
-fn global_sub_up(r: &Bindings, term: Inferable) -> Inferable {
-    use super::Inferable::*;
-    match term {
-        Ann(e, t) => Ann(global_sub_down(r, e), global_sub_down(r, t)),
-        Star => Star,
-        Pi(t, t_) => Pi(global_sub_down(r, t), global_sub_down(r, t_)),
-        Bound(j) => Bound(j),
-        Free(Name::Global(y)) => match r.get(&y) {
-            Some(term) => term.clone(),
-            None => Free(Name::Global(y))
-        },
-        Free(n) => Free(n),
-        App(box e, e_) => {
-            let term = global_sub_down(r, e_);
-            App(Box::new(global_sub_up(r, e)), term)
-        },
-    }
-}
-
-fn global_sub_down(r: &Bindings, term: Checkable) -> Checkable {
-    match term {
-        Inf(box e) => Inf(Box::new(global_sub_up(r, e))),
-        Lam(box e) => Lam(Box::new(global_sub_down(r, e))),
-    }
-}
-
 struct Ctx<'a> { tok: SplitWhitespace<'a>, cur: Option<&'a str> }
 
 fn token(ctx: &mut Ctx) -> Option<Tok> {
@@ -147,7 +121,7 @@ pub fn parse(s: &str, ctx: &mut Context, bindings: &mut Bindings) -> Result<Opti
     }.or(Err(())).map( |(_, inf)| match inf {
         Decl(d) => {
             for (v, c) in d {
-                let c = global_sub_down(bindings, c);
+                let c = ::global_sub_down(bindings, c);
                 if ::type_down(0, ctx.clone(), c.clone(), Value::Star).is_ok() {
                     ctx.push_front((v, ::eval_down(c, VecDeque::new())));
                 }
@@ -155,11 +129,11 @@ pub fn parse(s: &str, ctx: &mut Context, bindings: &mut Bindings) -> Result<Opti
             None
         },
         Expr(e) => {
-            let e = global_sub_up(bindings, e);
+            let e = ::global_sub_up(bindings, e);
             Some(e)
         },
         Bind(v, e) => {
-            let e = global_sub_up(bindings, e);
+            let e = ::global_sub_up(bindings, e);
             Some(match ::type_up_0(ctx.clone(), e.clone()) {
                 Ok(ty) => {
                     bindings.insert(v.clone(), e.clone());

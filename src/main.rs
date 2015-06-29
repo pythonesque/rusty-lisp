@@ -205,6 +205,88 @@ fn boundfree(i: usize, name: Name) -> Inferable {
     }
 }
 
+fn global_sub_up(r: &Bindings, term: Inferable) -> Inferable {
+    use self::Inferable::*;
+    match term {
+        Ann(e, t) => Ann(global_sub_down(r, e), global_sub_down(r, t)),
+        Star => Star,
+        Pi(t, t_) => Pi(global_sub_down(r, t), global_sub_down(r, t_)),
+        Bound(j) => Bound(j),
+        Free(Name::Global(y)) => match r.get(&y) {
+            Some(term) => term.clone(),
+            None => Free(Name::Global(y))
+        },
+        Free(n) => Free(n),
+        App(box e, e_) => {
+            let term = global_sub_down(r, e_);
+            App(Box::new(global_sub_up(r, e)), term)
+        },
+    }
+}
+
+fn global_sub_down(r: &Bindings, term: Checkable) -> Checkable {
+    use self::Checkable::*;
+    match term {
+        Inf(box e) => Inf(Box::new(global_sub_up(r, e))),
+        Lam(box e) => Lam(Box::new(global_sub_down(r, e))),
+    }
+}
+
+fn find_up(i: &Name, term: &Inferable) -> bool {
+    use self::Inferable::*;
+    match *term {
+        Ann(ref e, ref t) => find_down(i, e) || find_down(i, t),
+        Star => false,
+        Pi(ref t, ref t_) => find_down(i, t) || find_down(i, t_),
+        Bound(j) => false,
+        Free(ref y) => y == i,
+        App(box ref e, ref e_) => find_down(i, e_) || find_up(i, e),
+    }
+}
+
+fn find_down(i: &Name, term: &Checkable) -> bool {
+    use self::Checkable::*;
+    match *term {
+        Inf(box ref e) => find_up(i, e),
+        Lam(box ref e) => find_down(i, e),
+    }
+}
+
+fn bound_name(term: &Checkable, d: &mut VecDeque<usize>) -> usize {
+   let mut x = d.iter().rev().next().map(|&x|x).unwrap_or(d.len()) + 1;
+   while find_down(&Name::Global(format!("v{}", x)), term) { x = x + 1; }
+   d.push_front(x);
+   x
+}
+
+fn print_up(term: Inferable, mut d: VecDeque<usize>) -> String {
+    use self::Inferable::*;
+    match term {
+        Ann(e, t) => format!("({} : {})", print_down(e, d.clone()), print_down(t, d)),
+        Star => "*".into(),
+        Pi(t, t_) => {
+            let t = print_down(t, d.clone());
+            let x = bound_name(&t_, &mut d);
+            format!("(Π (v{} : {}) . {})", x, t, print_down(t_, d))
+        },
+        Free(Name::Global(x)) => x,
+        Free(n) => panic!("Did not expect {:?} during print_up", n),
+        Bound(i) => format!("v{}", d[i]),
+        App(box e, e_) => format!("({} {})", print_up(e, d.clone()), print_down(e_, d)),
+    }
+}
+
+fn print_down(term: Checkable, mut d: VecDeque<usize>) -> String {
+    use self::Checkable::*;
+    match term {
+        Inf(box i) => format!("{}", print_up(i, d)),
+        Lam(box e) => {
+            let x = bound_name(&e, &mut d);
+            format!("(λ v{} -> {})", x, print_down(e, d))
+        },
+    }
+}
+
 pub type Info = Value;
 
 pub type Context = VecDeque<(Name, Info)>;
@@ -229,8 +311,8 @@ fn main() {
             Ok(line) => match parser::parse(&line, &mut env, &mut bindings) {
                 Ok(Some(term)) => {
                     match type_up_0(env.clone(), term.clone()) {
-                        Ok(ty) => println!("{:?} : {:?}", quote_0(eval_up(term, Env::new())), quote_0(ty)),
-                        Err(e) => println!("Type error: {:?} {}", term, e)
+                        Ok(ty) => println!("{} : {}", print_down(quote_0(eval_up(term, Env::new())), VecDeque::new()), print_down(quote_0(ty), VecDeque::new())),
+                        Err(e) => println!("Type error: {} {}", print_up(term, VecDeque::new()), e)
                     }
                 },
                 Ok(None) => (),
