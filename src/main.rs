@@ -78,7 +78,6 @@ fn eval_up(term: Inferable, d: Env) -> Value {
 fn vapp(value: Value, v: Value) -> Value {
     match value {
         Value::Lam(f) => f(v),
-        //Value::Pi(_, f) => f(v),
         Value::Neutral(n) => Value::Neutral(Neutral::App(Box::new(n), Box::new(v))),
         _ => panic!("Should only apply Lam and Neutral values!")
     }
@@ -217,41 +216,6 @@ type Result<A> = ::std::result::Result<A, String>;
 fn main() {
     use std::collections::HashMap;
     use std::io::{self, BufRead, Write};
-    /*use self::Inferable::*;
-    use self::Checkable::*;
-    use self::Name::*;
-    use self::Info::*;
-    use self::Kind::*;
-    let id_ = Lam(Box::new(Inf(Box::new(Bound(0)))));
-    let const_ = Lam(Box::new(Lam(Box::new(Inf(Box::new(Bound(1)))))));
-    let tfree = |a: &str| Type::Free(Global(a.into()));
-    let free = |x: &str| Inf(Box::new(Free(Global(x.into()))));
-    let term_1 = App(Box::new(Ann(id_.clone(), Type::Fun(Box::new(tfree("a")), Box::new(tfree("a"))))), free("y"));
-    let term_2 = App(Box::new(App(Box::new(Ann(const_, Type::Fun(Box::new(Type::Fun(Box::new(tfree("b")), Box::new(tfree("b")))),
-                                                                 Box::new(Type::Fun(Box::new(tfree("a")),
-                                                                                    Box::new(Type::Fun(Box::new(tfree("b")), Box::new(tfree("b"))))))))),
-                                  id_)),
-                     free("y"));
-    let mut env_1 = VecDeque::new();
-    env_1.push_back((Global("y".into()), HasType(tfree("a"))));
-    env_1.push_back((Global("a".into()), HasKind(Star)));
-    let mut env_2 = env_1.clone();
-    env_2.push_front((Global("b".into()), HasKind(Star)));
-    println!("{:?}", quote_0(eval_up(term_1.clone(), VecDeque::new())));
-    println!("{:?}", quote_0(eval_up(term_2.clone(), VecDeque::new())));
-    println!("{:?}", type_up_0(env_1, term_1));
-    println!("{:?}", type_up_0(env_2, term_2));
-    //eval_up(Inferable::Free(Name::Global("foo".to_string())), Env::new());
-
-    //println!("{:?}", parse::parse("x : y"));
-    //println!("{:?}", parse::parse("x : ( ( y -> y ) ) -> y"));
-    //println!("{:?}", parse::parse("fn x -> y : ( ( y -> y ) ) -> y"));
-    //println!("{:?}", parse::parse("x y z"));
-    //println!("{:?}", parse::parse("( x : ( y -> y ) ) -> y"));
-    //println!("{:?}", parser::parse("x y z : y -> y -> y"));
-    let mut env = VecDeque::new();
-    println!("{:?}", parser::parse("assume (x:y)(z:*)", &mut env));
-    println!("{:?}", env);*/
     let mut env = VecDeque::new();
 
     let mut bindings = HashMap::new();
@@ -268,11 +232,6 @@ fn main() {
                         Ok(ty) => println!("{:?} : {:?}", quote_0(eval_up(term, Env::new())), quote_0(ty)),
                         Err(e) => println!("Type error: {:?} {}", term, e)
                     }
-                    /*print!("{:?} : ", quote_0(eval_up(term.clone(), Env::new())));
-                    match type_up_0(env.clone(), term) {
-                        Ok(ty) => println!("{:?}", quote_0(ty)),
-                        Err(e) => println!("Type error: {}", e)
-                    }*/
                 },
                 Ok(None) => (),
                 Err(()) => println!("Parse error.")
