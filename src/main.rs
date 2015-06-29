@@ -5,12 +5,14 @@
 
 mod parser;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
 #[derive(Clone,PartialEq,Debug)]
 pub enum Inferable {
     Ann(Checkable, Type),
+    Star,
+    Pi(Type, Checkable),
     Bound(usize),
     Free(Name),
     App(Box<Inferable>, Checkable),
@@ -29,15 +31,13 @@ pub enum Name {
     Quote(usize),
 }
 
-#[derive(Clone,PartialEq,Debug)]
-pub enum Type {
-    Free(Name),
-    Fun(Box<Type>, Box<Type>),
-}
+pub type Type = Checkable;
 
 #[derive(Clone)]
 enum Value {
     Lam(Rc<Fn(Value) -> Value>),
+    Star,
+    Pi(Box<Info>, Rc<Fn(Value) -> Value>),
     Neutral(Neutral),
 }
 
@@ -57,13 +57,21 @@ fn eval_up(term: Inferable, d: Env) -> Value {
     use self::Inferable::*;
     match term {
         Ann(e, _) => eval_down(e, d),
+        Star => Value::Star,
+        Pi(t, t_) => {
+            Value::Pi(Box::new(eval_down(t, d.clone())), Rc::new(move |x| {
+                let mut d = d.clone();
+                d.push_front(x);
+                eval_down(t_.clone(), d)
+            }))
+        },
         Free(x) => vfree(x),
         Bound(i) => d[i].clone(),
         App(box e, e_) => {
             let e = eval_up(e, d.clone());
             let e_ = eval_down(e_, d);
             vapp(e, e_)
-        }
+        },
     }
 }
 
@@ -71,6 +79,7 @@ fn vapp(value: Value, v: Value) -> Value {
     match value {
         Value::Lam(f) => f(v),
         Value::Neutral(n) => Value::Neutral(Neutral::App(Box::new(n), Box::new(v))),
+        _ => panic!("Should only apply Lam and Neutral values!")
     }
 }
 
@@ -90,43 +99,37 @@ fn eval_down(term: Checkable, d: Env) -> Value {
 
 macro_rules! throw_error ( ($s:expr) => {{ return Err($s.into()) }} );
 
-fn kind_down(ctx: Context, ty: Type, k: Kind) -> Result<()> {
-    match (ty, k) {
-        (Type::Free(ref x), Kind::Star) => match ctx.into_iter().find(|&(ref name, ref i)| name == x && if let Info::HasKind(_) = *i { true} else { false }) {
-            Some((_, Info::HasKind(Kind::Star))) => Ok(()),
-            None => throw_error!("unknown identifier"),
-            _ => panic!("Free variable should not have a type"),
-        },
-        (Type::Fun(box k, box k_), Kind::Star) => {
-            try!(kind_down(ctx.clone(), k, Kind::Star));
-            kind_down(ctx, k_, Kind::Star)
-        }
-    }
-}
-
-fn type_up_0(ctx: Context, term: Inferable) -> Result<Type> {
+fn type_up_0(ctx: Context, term: Inferable) -> Result<Info> {
     type_up(0, ctx, term)
 }
 
-fn type_up(i: usize, ctx: Context, term: Inferable) -> Result<Type> {
+fn type_up(i: usize, mut ctx: Context, term: Inferable) -> Result<Info> {
     use self::Inferable::*;
     match term {
-        Ann(e, t) => {
-            try!(kind_down(ctx.clone(), t.clone(), Kind::Star));
+        Ann(e, p) => {
+            try!(type_down(i, ctx.clone(), p.clone(), Value::Star));
+            let t = eval_down(p, Env::new());
             try!(type_down(i, ctx, e, t.clone()));
             Ok(t)
         },
-        Free(ref x) => match ctx.into_iter().find(|&(ref name, ref i)| name == x && if let Info::HasType(_) = *i { true } else { false }) {
-            Some((_, Info::HasType(t))) => Ok(t),
+        Star => Ok(Value::Star),
+        Pi(p, p_) => {
+            try!(type_down(i, ctx.clone(), p.clone(), Value::Star));
+            let t = eval_down(p, Env::new());
+            ctx.push_front((Name::Local(i), t));
+            try!(type_down(i + 1, ctx, subst_down(0, Inferable::Free(Name::Local(i)), p_), Value::Star));
+            Ok(Value::Star)
+        },
+        Free(ref x) => match ctx.into_iter().find(|&(ref name, _)| name == x) {
+            Some((_, t)) => Ok(t),
             None => throw_error!("unknown identifier"),
-            _ => panic!("Free variable should not have a kind"),
         },
         App(box e, e_) => {
             let o = try!(type_up(i, ctx.clone(), e));
             match o {
-                Type::Fun(box t, box t_) => {
-                    try!(type_down(i, ctx, e_, t));
-                    Ok(t_)
+                Value::Pi(box t, t_) => {
+                    try!(type_down(i, ctx, e_.clone(), t));
+                    Ok(t_(eval_down(e_, Env::new())))
                 },
                 _ => throw_error!("illegal application")
             }
@@ -135,18 +138,18 @@ fn type_up(i: usize, ctx: Context, term: Inferable) -> Result<Type> {
     }
 }
 
-fn type_down(i: usize, mut ctx: Context, term: Checkable, ty: Type) -> Result<()> {
+fn type_down(i: usize, mut ctx: Context, term: Checkable, ty: Info) -> Result<()> {
     use self::Checkable::*;
     match (term, ty) {
-        (Inf(box e), t) => {
-            let t_ = try!(type_up(i, ctx.clone(), e));
-            if t != t_ { throw_error!("type mismatch"); }
+        (Inf(box e), v) => {
+            let v_ = try!(type_up(i, ctx.clone(), e));
+            if quote_0(v) != quote_0(v_) { throw_error!("type mismatch"); }
             Ok(())
         },
-        (Lam(box e), Type::Fun(box t, box t_)) => {
+        (Lam(box e), Value::Pi(box t, t_)) => {
             //let mut ctx = ctx.clone();
-            ctx.push_front((Name::Local(i), Info::HasType(t)));
-            type_down(i + 1, ctx, subst_down(0, Inferable::Free(Name::Local(i)), e), t_)
+            ctx.push_front((Name::Local(i), t));
+            type_down(i + 1, ctx, subst_down(0, Inferable::Free(Name::Local(i)), e), t_(vfree(Name::Local(i))))
         },
         _ => throw_error!("type mismatch")
     }
@@ -155,12 +158,14 @@ fn type_down(i: usize, mut ctx: Context, term: Checkable, ty: Type) -> Result<()
 fn subst_up(i: usize, r: Inferable, term: Inferable) -> Inferable {
     use self::Inferable::*;
     match term {
-        Ann(e, t) => Ann(subst_down(i, r, e), t),
+        Ann(e, t) => Ann(subst_down(i, r.clone(), e), subst_down(i, r, t)),
+        Star => Star,
+        Pi(t, t_) => Pi(subst_down(i, r.clone(), t), subst_down(i + 1, r, t_)),
         Bound(j) => if i == j { r } else { Bound(j) },
         Free(y) => Free(y),
         App(box e, e_) => {
             let term = subst_down(i, r.clone(), e_);
-            App(Box::new(subst_up(i, r, e)), term)
+            App(Box::new(subst_up(i, r.clone(), e)), term)
         },
     }
 }
@@ -180,6 +185,8 @@ fn quote_0(value: Value) -> Checkable {
 fn quote(i: usize, value: Value) -> Checkable {
     match value {
         Value::Lam(f) => Checkable::Lam(Box::new(quote(i + 1, f(vfree(Name::Quote(i)))))),
+        Value::Star => Checkable::Inf(Box::new(Inferable::Star)),
+        Value::Pi(box v, f) => Checkable::Inf(Box::new(Inferable::Pi(quote(i, v), quote(i + 1, f(vfree(Name::Quote(i))))))),
         Value::Neutral(n) => Checkable::Inf(Box::new(neutral_quote(i, n))),
     }
 }
@@ -198,22 +205,16 @@ fn boundfree(i: usize, name: Name) -> Inferable {
     }
 }
 
-#[derive(Clone,Debug)]
-pub enum Kind {
-    Star,
-}
-
-#[derive(Clone,Debug)]
-pub enum Info {
-    HasKind(Kind),
-    HasType(Type),
-}
+pub type Info = Value;
 
 pub type Context = VecDeque<(Name, Info)>;
+
+pub type Bindings = HashMap<String, Inferable>;
 
 type Result<A> = ::std::result::Result<A, String>;
 
 fn main() {
+    use std::collections::HashMap;
     use std::io::{self, BufRead, Write};
     /*use self::Inferable::*;
     use self::Checkable::*;
@@ -252,13 +253,15 @@ fn main() {
     println!("{:?}", env);*/
     let mut env = VecDeque::new();
 
+    let mut bindings = HashMap::new();
+
     let stdin = io::stdin();
     let mut stdout = io::stdout();
     let _ = write!(stdout, "> ");
-    stdout.flush();
+    let _ = stdout.flush();
     for line in stdin.lock().lines() {
         match line {
-            Ok(line) => match parser::parse(&line, &mut env) {
+            Ok(line) => match parser::parse(&line, &mut env, &mut bindings) {
                 Ok(Some(term)) => {
                     /*match type_up_0(env.clone(), term.clone()) {
                         Ok(ty) => println!("{:?} : {:?}", quote_0(eval_up(term, Env::new())), ty),
@@ -266,7 +269,7 @@ fn main() {
                     }*/
                     print!("{:?} : ", quote_0(eval_up(term.clone(), Env::new())));
                     match type_up_0(env.clone(), term) {
-                        Ok(ty) => println!("{:?}", ty),
+                        Ok(ty) => println!("{:?}", quote_0(ty)),
                         Err(e) => println!("Type error: {}", e)
                     }
                 },
@@ -275,7 +278,7 @@ fn main() {
             },
             Err(e) => println!("I/O error: {}", e),
         }
-        write!(stdout, "> ");
+        let _ = write!(stdout, "> ");
         let _ = stdout.flush();
     }
 }

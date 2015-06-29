@@ -3,9 +3,6 @@ grammar {
     use Inferable::*;
     use Checkable::*;
     use Name::*;
-    use Info::*;
-    use Kind::*;
-    use Type as Ty;
     use parser::{de_bruijn_down, Tok, Stmt};
     use parser::Stmt::*;
     use std::collections::VecDeque;
@@ -17,20 +14,21 @@ grammar {
         "fn" => "Lambda";
         ":" => "Colon";
         "*" => "Star";
+        "pi" => "Pi";
         "assume" => "Assume";
+        "let" => "Let";
+        "=" => "Eq";
     };
 
     pub S = Stmt;
 
     Stmt: Stmt = {
         "assume" ~Context => Decl(~~);
+        "let" n:"Ident" "=" e:Expr => Bind(n.as_ident(), e);
         ~Expr => Expr(~~);
     };
 
-    Info: Info = {
-        "*" => HasKind(Star);
-        ~Type => HasType(~~);
-    };
+    Info: Info = ~Type => ::eval_down(~~, VecDeque::new());
 
     Binding: (Name, Info) = n:"Ident" ":" i:Info => (Global(n.as_ident()), i);
 
@@ -56,14 +54,9 @@ grammar {
         BindingList;
     };
 
-    AtomicType = {
-        ~"Ident" => Ty::Free(Global(~~.as_ident()));
-        "(" ~Type ")";
-    };
-
-    Type: Ty = {
-        AtomicType;
-        t1:AtomicType "->" t2:Type => Ty::Fun(Box::new(t1), Box::new(t2));
+    Type: Checkable = {
+        AtomCheck;
+        t1:AtomCheck "->" t2:Type => Inf(Box::new(Pi(t1, t2)));
     };
 
     Expr: Inferable = {
@@ -80,10 +73,13 @@ grammar {
     AtomInf: Inferable = {
         ~"Ident" => Free(Global(~~.as_ident()));
         "(" ~Inf ")";
+        "*" => Star;
+        "pi" "(" d:"Ident" ":" t:Type ")" "->" c:AtomCheck => Pi(t, de_bruijn_down(Global(d.as_ident()), 0, c));
     };
 
     AtomCheck: Checkable = {
         ~AtomInf => Inf(Box::new(~~));
+        "(" t1:AtomCheck "->" t2:Type ")" => Inf(Box::new(Pi(t1, t2)));
         "(" ~Check ")";
     };
 
