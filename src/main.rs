@@ -78,7 +78,7 @@ fn eval_up(term: Inferable, d: Env) -> Value {
 fn vapp(value: Value, v: Value) -> Value {
     match value {
         Value::Lam(f) => f(v),
-        Value::Pi(_, f) => f(v),
+        //Value::Pi(_, f) => f(v),
         Value::Neutral(n) => Value::Neutral(Neutral::App(Box::new(n), Box::new(v))),
         _ => panic!("Should only apply Lam, Pi and Neutral values!")
     }
