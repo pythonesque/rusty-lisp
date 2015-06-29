@@ -1,5 +1,5 @@
 grammar {
-    use {Checkable, Context, Inferable, Info, Name};
+    use {Checkable, Inferable, Name};
     use Inferable::*;
     use Checkable::*;
     use Name::*;
@@ -28,19 +28,19 @@ grammar {
         ~Expr => Expr(~~);
     };
 
-    Info: Info = ~Type => ::eval_down(~~, VecDeque::new());
+    Info: Checkable = Type;
 
-    Binding: (Name, Info) = n:"Ident" ":" i:Info => (Global(n.as_ident()), i);
+    Binding: (Name, Checkable) = n:"Ident" ":" i:Info => (Global(n.as_ident()), i);
 
-    BindingList: Context = {
+    BindingList: VecDeque<(Name, Checkable)> = {
         "(" ~Binding ")" => {
             let mut v = VecDeque::new();
-            v.push_front(~~);
+            v.push_back(~~);
             v
         };
         v:BindingList "(" b:Binding ")" => {
             let mut v = v;
-            v.push_front(b);
+            v.push_back(b);
             v
         };
     };
@@ -48,7 +48,7 @@ grammar {
     Context = {
         ~Binding => {
             let mut v = VecDeque::new();
-            v.push_front(~~);
+            v.push_back(~~);
             v
         };
         BindingList;

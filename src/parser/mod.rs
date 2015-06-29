@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::iter::once;
 use std::str::SplitWhitespace;
 use super::Checkable::*;
-use super::{Bindings, Checkable, Context, Inferable, Name};
+use super::{Bindings, Checkable, Context, Inferable, Name, Value};
 use self::Stmt::*;
 
 fn de_bruijn_up(i: Name, r: usize, term: Inferable) -> Inferable {
@@ -112,7 +112,7 @@ pub enum Tok {
 }
 
 pub enum Stmt {
-    Decl(Context),
+    Decl(VecDeque<(Name, Checkable)>),
     Expr(Inferable),
     Bind(String, Inferable),
 }
@@ -144,9 +144,13 @@ pub fn parse(s: &str, ctx: &mut Context, bindings: &mut Bindings) -> Result<Opti
         },
         cur => self::gram::parse_S(Ctx { tok: tokens, cur: cur })
     }.or(Err(())).map( |(_, inf)| match inf {
-        Decl(mut d) => {
-            ::std::mem::swap(&mut d, ctx);
-            ctx.extend(d);
+        Decl(d) => {
+            for (v, c) in d {
+                let c = global_sub_down(bindings, c);
+                if ::type_down(0, ctx.clone(), c.clone(), Value::Star).is_ok() {
+                    ctx.push_front((v, ::eval_down(c, VecDeque::new())));
+                }
+            }
             None
         },
         Expr(e) => {

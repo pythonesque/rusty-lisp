@@ -80,7 +80,7 @@ fn vapp(value: Value, v: Value) -> Value {
         Value::Lam(f) => f(v),
         //Value::Pi(_, f) => f(v),
         Value::Neutral(n) => Value::Neutral(Neutral::App(Box::new(n), Box::new(v))),
-        _ => panic!("Should only apply Lam, Pi and Neutral values!")
+        _ => panic!("Should only apply Lam and Neutral values!")
     }
 }
 
@@ -264,15 +264,15 @@ fn main() {
         match line {
             Ok(line) => match parser::parse(&line, &mut env, &mut bindings) {
                 Ok(Some(term)) => {
-                    /*match type_up_0(env.clone(), term.clone()) {
-                        Ok(ty) => println!("{:?} : {:?}", quote_0(eval_up(term, Env::new())), ty),
+                    match type_up_0(env.clone(), term.clone()) {
+                        Ok(ty) => println!("{:?} : {:?}", quote_0(eval_up(term, Env::new())), quote_0(ty)),
                         Err(e) => println!("Type error: {:?} {}", term, e)
-                    }*/
-                    print!("{:?} : ", quote_0(eval_up(term.clone(), Env::new())));
+                    }
+                    /*print!("{:?} : ", quote_0(eval_up(term.clone(), Env::new())));
                     match type_up_0(env.clone(), term) {
                         Ok(ty) => println!("{:?}", quote_0(ty)),
                         Err(e) => println!("Type error: {}", e)
-                    }
+                    }*/
                 },
                 Ok(None) => (),
                 Err(()) => println!("Parse error.")
