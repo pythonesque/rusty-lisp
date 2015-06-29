@@ -155,7 +155,7 @@ pub fn parse(s: &str, ctx: &mut Context, bindings: &mut Bindings) -> Result<Opti
         },
         Bind(v, e) => {
             let e = global_sub_up(bindings, e);
-            Some(match ::type_up_0(VecDeque::new(), e.clone()) {
+            Some(match ::type_up_0(ctx.clone(), e.clone()) {
                 Ok(ty) => {
                     bindings.insert(v.clone(), e.clone());
                     ctx.push_front((Name::Global(v.clone()), ty));
