@@ -25,7 +25,7 @@ grammar {
     Stmt: Stmt = {
         "assume" ~Context => Decl(~~);
         "let" n:"Ident" "=" e:Expr => Bind(n.as_ident(), e);
-        ~Expr => Expr(~~);
+        Expr => Expr(~~);
     };
 
     Info: Checkable = Type;
@@ -46,7 +46,7 @@ grammar {
     };
 
     Context = {
-        ~Binding => {
+        Binding => {
             let mut v = VecDeque::new();
             v.push_back(~~);
             v
@@ -54,9 +54,14 @@ grammar {
         BindingList;
     };
 
+    PiType: Inferable = {
+        t1:AtomCheck "->" t2:Type => Pi(t1, t2);
+        "pi" "(" d:"Ident" ":" t:Type ")" "->" c:Type => Pi(t, de_bruijn_down(Global(d.as_ident()), 0, c));
+    };
+
     Type: Checkable = {
+        PiType => Inf(Box::new(~~));
         AtomCheck;
-        t1:AtomCheck "->" t2:Type => Inf(Box::new(Pi(t1, t2)));
     };
 
     Expr: Inferable = {
@@ -68,18 +73,17 @@ grammar {
         i:Inf c:AtomCheck => App(Box::new(i), c);
         c:AtomCheck ":" t:Type => Ann(c, t);
         e:Inf c:AtomCheck ":" t:Type => Ann(Inf(Box::new(App(Box::new(e), c))), t);
+        PiType;
     };
 
     AtomInf: Inferable = {
-        ~"Ident" => Free(Global(~~.as_ident()));
+        "Ident" => Free(Global(~~.as_ident()));
         "(" ~Inf ")";
         "*" => Star;
-        "pi" "(" d:"Ident" ":" t:Type ")" "->" c:AtomCheck => Pi(t, de_bruijn_down(Global(d.as_ident()), 0, c));
-        "(" t1:AtomCheck "->" t2:Type ")" => Pi(t1, t2);
     };
 
     AtomCheck: Checkable = {
-        ~AtomInf => Inf(Box::new(~~));
+        AtomInf => Inf(Box::new(~~));
         "(" ~Check ")";
     };
 

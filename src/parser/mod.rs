@@ -142,6 +142,7 @@ pub fn parse(s: &str, ctx: &mut Context, bindings: &mut Bindings) -> Result<Opti
             let cur = tokens.next();
             self::gram::parse_S(once(Tok::Assume).chain(Ctx { tok: tokens, cur: cur }))
         },
+        None => return Ok(None),
         cur => self::gram::parse_S(Ctx { tok: tokens, cur: cur })
     }.or(Err(())).map( |(_, inf)| match inf {
         Decl(d) => {
