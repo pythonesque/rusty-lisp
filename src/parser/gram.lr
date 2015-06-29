@@ -75,11 +75,11 @@ grammar {
         "(" ~Inf ")";
         "*" => Star;
         "pi" "(" d:"Ident" ":" t:Type ")" "->" c:AtomCheck => Pi(t, de_bruijn_down(Global(d.as_ident()), 0, c));
+        "(" t1:AtomCheck "->" t2:Type ")" => Pi(t1, t2);
     };
 
     AtomCheck: Checkable = {
         ~AtomInf => Inf(Box::new(~~));
-        "(" t1:AtomCheck "->" t2:Type ")" => Inf(Box::new(Pi(t1, t2)));
         "(" ~Check ")";
     };
 
