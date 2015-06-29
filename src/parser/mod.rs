@@ -44,6 +44,9 @@ fn token(ctx: &mut Ctx) -> Option<Tok> {
                 ':' => Colon,
                 '*' => Star,
                 '=' => Eq,
+                'λ' => Lambda,
+                'Π' => Pi,
+                '→' => Arrow,
                 '-' => match cur_.slice_shift_char() {
                     Some(('>', cur_)) => {
                         ctx.cur = Some(cur_);
@@ -52,10 +55,11 @@ fn token(ctx: &mut Ctx) -> Option<Tok> {
                     _ => Error
                 },
                 ch if ch.is_alphabetic() => {
-                    let end = cur
+                    let (end, lch) = cur
                         .char_indices()
                         .take_while( |&(_, ch)| ch.is_alphanumeric() )
-                        .last().unwrap().0 + ch.len_utf8();
+                        .last().unwrap();
+                    let end = end + lch.len_utf8();
                     ctx.cur = Some(&cur[end ..]);
                     match &cur[.. end] {
                         "fn" => Lambda,

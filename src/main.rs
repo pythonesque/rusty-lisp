@@ -259,30 +259,41 @@ fn bound_name(term: &Checkable, d: &mut VecDeque<usize>) -> usize {
    x
 }
 
-fn print_up(term: Inferable, mut d: VecDeque<usize>) -> String {
+#[derive(Clone,Copy)] enum Assoc { Left, Right, }
+
+fn print_up(term: Inferable, mut d: VecDeque<usize>, assoc: Assoc) -> String {
     use self::Inferable::*;
     match term {
-        Ann(e, t) => format!("({} : {})", print_down(e, d.clone()), print_down(t, d)),
+        Ann(e, t) => format!("{} : {}", print_down(e, d.clone(), Assoc::Left), print_down(t, d, Assoc::Right)),
         Star => "*".into(),
         Pi(t, t_) => {
-            let t = print_down(t, d.clone());
+            let t = print_down(t, d.clone(), Assoc::Right);
             let x = bound_name(&t_, &mut d);
-            format!("(Π (v{} : {}) . {})", x, t, print_down(t_, d))
+            match assoc {
+                Assoc::Left => format!("(Π (v{} : {}) → {})", x, t, print_down(t_, d, Assoc::Right)),
+                Assoc::Right => format!("Π (v{} : {}) → {}", x, t, print_down(t_, d, Assoc::Right)),
+            }
         },
         Free(Name::Global(x)) => x,
         Free(n) => panic!("Did not expect {:?} during print_up", n),
         Bound(i) => format!("v{}", d[i]),
-        App(box e, e_) => format!("({} {})", print_up(e, d.clone()), print_down(e_, d)),
+        App(box e, e_) => match assoc {
+            Assoc::Left => format!("{} {}", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Right)),
+            Assoc::Right => format!("({} {})", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Right)),
+        },
     }
 }
 
-fn print_down(term: Checkable, mut d: VecDeque<usize>) -> String {
+fn print_down(term: Checkable, mut d: VecDeque<usize>, assoc:Assoc) -> String {
     use self::Checkable::*;
     match term {
-        Inf(box i) => format!("{}", print_up(i, d)),
+        Inf(box i) => format!("{}", print_up(i, d, assoc)),
         Lam(box e) => {
             let x = bound_name(&e, &mut d);
-            format!("(λ v{} -> {})", x, print_down(e, d))
+            match assoc {
+                Assoc::Right => format!("λ v{} → {}", x, print_down(e, d, Assoc::Right)),
+                Assoc::Left => format!("(λ v{} → {})", x, print_down(e, d, Assoc::Right)),
+            }
         },
     }
 }
@@ -304,15 +315,15 @@ fn main() {
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    let _ = write!(stdout, "> ");
+    let _ = write!(stdout, "≫ ");
     let _ = stdout.flush();
     for line in stdin.lock().lines() {
         match line {
             Ok(line) => match parser::parse(&line, &mut env, &mut bindings) {
                 Ok(Some(term)) => {
                     match type_up_0(env.clone(), term.clone()) {
-                        Ok(ty) => println!("{} : {}", print_down(quote_0(eval_up(term, Env::new())), VecDeque::new()), print_down(quote_0(ty), VecDeque::new())),
-                        Err(e) => println!("Type error: {} {}", print_up(term, VecDeque::new()), e)
+                        Ok(ty) => println!("{}", print_up(Inferable::Ann(quote_0(eval_up(term, Env::new())), quote_0(ty)), VecDeque::new(), Assoc::Right)),
+                        Err(e) => println!("Type error: {} {}", print_up(term, VecDeque::new(), Assoc::Left), e)
                     }
                 },
                 Ok(None) => (),
@@ -320,7 +331,7 @@ fn main() {
             },
             Err(e) => println!("I/O error: {}", e),
         }
-        let _ = write!(stdout, "> ");
+        let _ = write!(stdout, "≫ ");
         let _ = stdout.flush();
     }
 }
