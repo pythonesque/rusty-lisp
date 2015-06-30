@@ -24,3 +24,6 @@ assume (a : *) (x : a) (y : a)
 append a 0 Nil a
 append a 1 Cons a 0 x Nil a
 append a 2 (Cons a 1 x (Cons a 0 x (Nil a))) 1 (Cons a 0 y (Nil a))
+
+let nE = (fn m -> fn mz -> fn ms -> fn k -> natElim m mz ms k) : pi (m : Nat -> *) -> (m Zero) -> (pi (l : Nat ) -> (m l) -> (m (Succ l))) -> pi (k: Nat) -> (m k)
+let vE = (fn a -> fn m -> fn mn -> fn mc -> fn k -> fn xs -> vecElim a m mn mc k xs) : pi (a : * ) -> pi (m : pi (k : Nat) -> Vec a k -> *) -> (m Zero (Nil a)) -> (pi (l : Nat) -> pi (x : a) -> pi (xs : Vec a l) -> (m l xs) -> (m (Succ l) (Cons a l x xs))) -> pi (k : Nat) -> pi (xs : Vec a k) -> (m k xs)

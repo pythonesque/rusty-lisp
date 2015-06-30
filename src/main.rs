@@ -529,15 +529,9 @@ type Result<A> = ::std::result::Result<A, String>;
 fn main() {
     use std::collections::HashMap;
     use std::io::{self, BufRead, Write};
-    let mut env = VecDeque::new();
 
+    let mut ctx = Context::new();
     let mut bindings = HashMap::new();
-
-    /*let nat_elim = eval_up(parser::parse("pi (m : Nat -> *) -> (m Zero) -> (pi (l : Nat ) -> (m l) -> (m (Succ l))) -> pi (k: Nat) -> (m k)", &mut env, &mut bindings).unwrap().unwrap(), Env::new());
-    env.push_front((Name::Global("natElim".into()), nat_elim));*/
-    /*let vec_elim = eval_up(parser::parse("pi (a : * ) -> pi (m : pi (k : Nat) -> Vec a k -> *) -> (m Zero (Nil a)) -> (pi (l : Nat) -> pi (x : a) -> pi (xs : Vec a l) -> (m l xs) -> (m (Succ l) (Cons a l x xs))) -> pi (k : Nat) -> pi (xs : Vec a k) -> (m k xs)", &mut env, &mut bindings).unwrap().unwrap(), Env::new());
-    /*let vec_elim = eval_up(parser::parse("(Π (v1 : *) → Π (v2 : Π (v2 : Nat) → Π (v3 : (Vec (v1) v2)) → *) → Π (v3 : (v2 (0) (Nil v1))) → Π (v4 : Π (v4 : Nat) → Π (v5 : v1) → Π (v6 : (Vec (v1) v4)) → Π (v7 : (v2 (v4) v6)) → (v2 ((Succ v4)) (Cons (v1) (v4) (v5) v6))) → Π (v5 : Nat) → Π (v6 : (Vec (v1) v5)) → (v2 (v5) v6)) : *", &mut env, &mut bindings).unwrap().unwrap(), Env::new());*/
-    env.push_front((Name::Global("vecElim".into()), vec_elim));*/
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -545,9 +539,9 @@ fn main() {
     let _ = stdout.flush();
     for line in stdin.lock().lines() {
         match line {
-            Ok(line) => match parser::parse(&line, &mut env, &mut bindings) {
+            Ok(line) => match parser::parse(&line, &mut ctx, &mut bindings) {
                 Ok(Some(term)) => {
-                    match type_up_0(env.clone(), term.clone()) {
+                    match type_up_0(ctx.clone(), term.clone()) {
                         Ok(ty) => println!("{}", print_up(Inferable::Ann(quote_0(eval_up(term, Env::new())), quote_0(ty)), VecDeque::new(), Assoc::Right)),
                         Err(e) => println!("Type error: {} {}", print_up(term, VecDeque::new(), Assoc::Left), e)
                     }

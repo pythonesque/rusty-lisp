@@ -92,6 +92,7 @@ fn token(ctx: &mut Ctx) -> Option<Tok> {
                         "let" => Let,
                         "Zero" => Zero,
                         "Nat" => Nat,
+                        //"ℕ" => Nat,
                         "Succ" => Succ,
                         "natElim" => NatElim,
                         "Vec" => Vec,
