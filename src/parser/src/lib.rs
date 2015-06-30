@@ -1,14 +1,46 @@
+#![feature(box_patterns)]
+#![feature(str_char)]
+
 mod gram;
 
+use self::Checkable::*;
 use std::collections::VecDeque;
-use std::iter::once;
 use std::str::SplitWhitespace;
-use super::Checkable::*;
-use super::{Bindings, Checkable, Context, Inferable, Name, Value};
-use self::Stmt::*;
+
+#[derive(Clone,PartialEq,Debug)]
+pub enum Inferable {
+    Ann(Checkable, Checkable),
+    Star,
+    Pi(Checkable, Checkable),
+    Bound(usize),
+    Free(Name),
+    App(Box<Inferable>, Checkable),
+    Nat,
+    Zero,
+    Succ(Checkable),
+    NatElim(Checkable, Checkable, Checkable, Checkable),
+    Vec(Checkable, Checkable),
+    Nil(Checkable),
+    Cons(Checkable, Checkable, Checkable, Checkable),
+    VecElim(Checkable, Checkable, Checkable, Checkable, Checkable, Checkable),
+}
+
+#[derive(Clone,PartialEq,Debug)]
+pub enum Checkable {
+    Inf(Box<Inferable>),
+    Lam(Box<Checkable>),
+}
+
+#[derive(PartialEq,Clone,Debug)]
+pub enum Name {
+    Global(String),
+    Local(usize),
+    Quote(usize),
+}
+
 
 fn de_bruijn_up(i: Name, r: usize, term: Inferable) -> Inferable {
-    use super::Inferable::*;
+    use self::Inferable::*;
     match term {
         Ann(e, t) => Ann(de_bruijn_down(i.clone(), r, e), de_bruijn_down(i, r, t)),
         Star => Star,
@@ -90,6 +122,7 @@ fn token(ctx: &mut Ctx) -> Option<Tok> {
                         "fn" => Lambda,
                         "pi" => Pi,
                         "let" => Let,
+                        "assume" => Assume,
                         "Zero" => Zero,
                         "Nat" => Nat,
                         //"ℕ" => Nat,
@@ -162,40 +195,11 @@ impl<'a> Iterator for Ctx<'a> {
     }
 }
 
-pub fn parse(s: &str, ctx: &mut Context, bindings: &mut Bindings) -> Result<Option<Inferable>, ()> {
+pub fn parse(s: &str) -> Option<Result<(Option<Tok>, Stmt), ()>> {
     let s = s.trim_left();
     let mut tokens = s.split_whitespace();
     match tokens.next() {
-        Some("assume") => {
-            let cur = tokens.next();
-            self::gram::parse_S(once(Tok::Assume).chain(Ctx { tok: tokens, cur: cur }))
-        },
-        None => return Ok(None),
-        cur => self::gram::parse_S(Ctx { tok: tokens, cur: cur })
-    }.or(Err(())).map( |(_, inf)| match inf {
-        Decl(d) => {
-            for (v, c) in d {
-                let c = ::global_sub_down(bindings, c);
-                if ::type_down(0, ctx.clone(), c.clone(), Value::Star).is_ok() {
-                    ctx.push_front((v, ::eval_down(c, VecDeque::new())));
-                }
-            }
-            None
-        },
-        Expr(e) => {
-            let e = ::global_sub_up(bindings, e);
-            Some(e)
-        },
-        Bind(v, e) => {
-            let e = ::global_sub_up(bindings, e);
-            Some(match ::type_up_0(ctx.clone(), e.clone()) {
-                Ok(ty) => {
-                    bindings.insert(v.clone(), e.clone());
-                    ctx.push_front((Name::Global(v.clone()), ty));
-                    Inferable::Free(Name::Global(v))
-                },
-                Err(_) => e
-            })
-        }
-    })
+        None => return None,
+        cur => Some(gram::parse_S(Ctx { tok: tokens, cur: cur }).or(Err(())))
+    }
 }

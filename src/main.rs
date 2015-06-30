@@ -1,45 +1,11 @@
 #![feature(box_patterns)]
-#![feature(str_char)]
 
 //extern crate rusty_lisp;
+extern crate parser;
 
-mod parser;
-
+use parser::{Checkable, Inferable, Name};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
-
-#[derive(Clone,PartialEq,Debug)]
-pub enum Inferable {
-    Ann(Checkable, Type),
-    Star,
-    Pi(Type, Checkable),
-    Bound(usize),
-    Free(Name),
-    App(Box<Inferable>, Checkable),
-    Nat,
-    Zero,
-    Succ(Checkable),
-    NatElim(Checkable, Checkable, Checkable, Checkable),
-    Vec(Checkable, Checkable),
-    Nil(Checkable),
-    Cons(Checkable, Checkable, Checkable, Checkable),
-    VecElim(Checkable, Checkable, Checkable, Checkable, Checkable, Checkable),
-}
-
-#[derive(Clone,PartialEq,Debug)]
-pub enum Checkable {
-    Inf(Box<Inferable>),
-    Lam(Box<Checkable>),
-}
-
-#[derive(PartialEq,Clone,Debug)]
-pub enum Name {
-    Global(String),
-    Local(usize),
-    Quote(usize),
-}
-
-pub type Type = Checkable;
 
 #[derive(Clone)]
 enum Value {
@@ -70,7 +36,7 @@ fn vfree(name: Name) -> Value {
 type Env = VecDeque<Value>;
 
 fn eval_up(term: Inferable, d: Env) -> Value {
-    use self::Inferable::*;
+    use parser::Inferable::*;
     match term {
         Ann(e, _) => eval_down(e, d),
         Star => Value::Star,
@@ -139,7 +105,7 @@ fn vapp(value: Value, v: Value) -> Value {
 }
 
 fn eval_down(term: Checkable, d: Env) -> Value {
-    use self::Checkable::*;
+    use parser::Checkable::*;
     match term {
         Inf(box i) => eval_up(i, d),
         Lam(box e) => {
@@ -159,7 +125,7 @@ fn type_up_0(ctx: Context, term: Inferable) -> Result<Info> {
 }
 
 fn type_up(i: usize, mut ctx: Context, term: Inferable) -> Result<Info> {
-    use self::Inferable::*;
+    use parser::Inferable::*;
     match term {
         Ann(e, p) => {
             try!(type_down(i, ctx.clone(), p.clone(), Value::Star));
@@ -273,7 +239,7 @@ fn type_up(i: usize, mut ctx: Context, term: Inferable) -> Result<Info> {
 }
 
 fn type_down(i: usize, mut ctx: Context, term: Checkable, ty: Info) -> Result<()> {
-    use self::Checkable::*;
+    use parser::Checkable::*;
     match (term, ty) {
         (Inf(box e), v) => {
             let v_ = try!(type_up(i, ctx.clone(), e));
@@ -290,7 +256,7 @@ fn type_down(i: usize, mut ctx: Context, term: Checkable, ty: Info) -> Result<()
 }
 
 fn subst_up(i: usize, r: Inferable, term: Inferable) -> Inferable {
-    use self::Inferable::*;
+    use parser::Inferable::*;
     match term {
         Ann(e, t) => Ann(subst_down(i, r.clone(), e), subst_down(i, r, t)),
         Star => Star,
@@ -320,7 +286,7 @@ fn subst_up(i: usize, r: Inferable, term: Inferable) -> Inferable {
 }
 
 fn subst_down(i: usize, r: Inferable, term: Checkable) -> Checkable {
-    use self::Checkable::*;
+    use parser::Checkable::*;
     match term {
         Inf(box e) => Inf(Box::new(subst_up(i, r, e))),
         Lam(box e) => Lam(Box::new(subst_down(i + 1, r, e))),
@@ -369,7 +335,7 @@ fn boundfree(i: usize, name: Name) -> Inferable {
 }
 
 fn global_sub_up(r: &Bindings, term: Inferable) -> Inferable {
-    use self::Inferable::*;
+    use parser::Inferable::*;
     match term {
         Ann(e, t) => Ann(global_sub_down(r, e), global_sub_down(r, t)),
         Star => Star,
@@ -403,7 +369,7 @@ fn global_sub_up(r: &Bindings, term: Inferable) -> Inferable {
 }
 
 fn global_sub_down(r: &Bindings, term: Checkable) -> Checkable {
-    use self::Checkable::*;
+    use parser::Checkable::*;
     match term {
         Inf(box e) => Inf(Box::new(global_sub_up(r, e))),
         Lam(box e) => Lam(Box::new(global_sub_down(r, e))),
@@ -411,7 +377,7 @@ fn global_sub_down(r: &Bindings, term: Checkable) -> Checkable {
 }
 
 fn find_up(i: &Name, term: &Inferable) -> bool {
-    use self::Inferable::*;
+    use parser::Inferable::*;
     match *term {
         Ann(ref e, ref t) => find_down(i, e) || find_down(i, t),
         Star => false,
@@ -438,7 +404,7 @@ fn find_up(i: &Name, term: &Inferable) -> bool {
 }
 
 fn find_down(i: &Name, term: &Checkable) -> bool {
-    use self::Checkable::*;
+    use parser::Checkable::*;
     match *term {
         Inf(box ref e) => find_up(i, e),
         Lam(box ref e) => find_down(i, e),
@@ -455,7 +421,7 @@ fn bound_name(term: &Checkable, d: &mut VecDeque<usize>) -> usize {
 #[derive(Clone,Copy)] enum Assoc { Left, Right, }
 
 fn print_up(term: Inferable, mut d: VecDeque<usize>, assoc: Assoc) -> String {
-    use self::Inferable::*;
+    use parser::Inferable::*;
     match term {
         Ann(e, t) => format!("{} : {}", print_down(e, d.clone(), Assoc::Left), print_down(t, d, Assoc::Right)),
         Star => "*".into(),
@@ -505,7 +471,7 @@ fn print_up(term: Inferable, mut d: VecDeque<usize>, assoc: Assoc) -> String {
 }
 
 fn print_down(term: Checkable, mut d: VecDeque<usize>, assoc:Assoc) -> String {
-    use self::Checkable::*;
+    use parser::Checkable::*;
     match term {
         Inf(box i) => format!("{}", print_up(i, d, Assoc::Right)),
         Lam(box e) => {
@@ -526,6 +492,40 @@ pub type Bindings = HashMap<String, Inferable>;
 
 type Result<A> = ::std::result::Result<A, String>;
 
+pub fn parse(s: &str, ctx: &mut Context, bindings: &mut Bindings) -> ::std::result::Result<Option<Inferable>, ()> {
+    use parser::Stmt::*;
+
+    match parser::parse(s) {
+        Some(res) => res.map( |(_, inf)| match inf {
+            Decl(d) => {
+                for (v, c) in d {
+                    let c = global_sub_down(bindings, c);
+                    if type_down(0, ctx.clone(), c.clone(), Value::Star).is_ok() {
+                        ctx.push_front((v, eval_down(c, VecDeque::new())));
+                    }
+                }
+                None
+            },
+            Expr(e) => {
+                let e = global_sub_up(bindings, e);
+                Some(e)
+            },
+            Bind(v, e) => {
+                let e = global_sub_up(bindings, e);
+                Some(match type_up_0(ctx.clone(), e.clone()) {
+                    Ok(ty) => {
+                        bindings.insert(v.clone(), e.clone());
+                        ctx.push_front((Name::Global(v.clone()), ty));
+                        Inferable::Free(Name::Global(v))
+                    },
+                    Err(_) => e
+                })
+            },
+        }),
+        None => Ok(None)
+    }
+}
+
 fn main() {
     use std::collections::HashMap;
     use std::io::{self, BufRead, Write};
@@ -539,7 +539,7 @@ fn main() {
     let _ = stdout.flush();
     for line in stdin.lock().lines() {
         match line {
-            Ok(line) => match parser::parse(&line, &mut ctx, &mut bindings) {
+            Ok(line) => match parse(&line, &mut ctx, &mut bindings) {
                 Ok(Some(term)) => {
                     match type_up_0(ctx.clone(), term.clone()) {
                         Ok(ty) => println!("{}", print_up(Inferable::Ann(quote_0(eval_up(term, Env::new())), quote_0(ty)), VecDeque::new(), Assoc::Right)),

@@ -1,10 +1,9 @@
 grammar {
-    use {Checkable, Inferable, Name};
-    use Inferable::*;
+    use ::{Checkable, de_bruijn_down, Inferable, Name, Tok, Stmt};
     use Checkable::*;
+    use Inferable::*;
     use Name::*;
-    use parser::{de_bruijn_down, Tok, Stmt};
-    use parser::Stmt::*;
+    use Stmt::*;
     use std::collections::VecDeque;
 
     token Tok where {

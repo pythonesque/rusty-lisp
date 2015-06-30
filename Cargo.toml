@@ -3,6 +3,7 @@
 name = "rusty-lisp"
 version = "0.0.1"
 authors = ["Joshua Yanovski <pythonesque@gmail.com>"]
+exclude = ["src/parser", "*.swp"]
 
-[dependencies.lalrpop]
-git = "https://github.com/nikomatsakis/lalrpop.git"
+[dependencies.parser]
+path = "./src/parser"
