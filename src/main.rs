@@ -17,9 +17,13 @@ pub enum Inferable {
     Free(Name),
     App(Box<Inferable>, Checkable),
     Nat,
-    NatElim(Checkable, Checkable, Checkable, Checkable),
     Zero,
     Succ(Checkable),
+    NatElim(Checkable, Checkable, Checkable, Checkable),
+    Vec(Checkable, Checkable),
+    Nil(Checkable),
+    Cons(Checkable, Checkable, Checkable, Checkable),
+    VecElim(Checkable, Checkable, Checkable, Checkable, Checkable, Checkable),
 }
 
 #[derive(Clone,PartialEq,Debug)]
@@ -46,6 +50,9 @@ enum Value {
     Nat,
     Zero,
     Succ(Box<Value>),
+    Vec(Box<Value>, Box<Value>),
+    Nil(Box<Value>),
+    Cons(Box<Value>, Box<Value>, Box<Value>, Box<Value>),
 }
 
 #[derive(Clone)]
@@ -53,6 +60,7 @@ enum Neutral {
     Free(Name),
     App(Box<Neutral>, Box<Value>),
     NatElim(Box<Value>, Box<Value>, Box<Value>, Box<Neutral>),
+    VecElim(Box<Value>, Box<Value>, Box<Value>, Box<Value>, Box<Value>, Box<Neutral>),
 }
 
 fn vfree(name: Name) -> Value {
@@ -91,13 +99,34 @@ fn eval_up(term: Inferable, d: Env) -> Value {
                     Value::Zero => mz,
                     Value::Succ(box l) => vapp(vapp(ms.clone(), l.clone()), rec(l, d, m, mz, ms)),
                     Value::Neutral(k) =>
-                        Value::Neutral(Neutral::NatElim(Box::new(eval_down(m, d.clone())), Box::new(mz),
+                        Value::Neutral(Neutral::NatElim(Box::new(eval_down(m, d)), Box::new(mz),
                                                         Box::new(ms), Box::new(k))),
                     _ => panic!("internal: eval natElim"),
                 }
             }
             rec(eval_down(k, d.clone()), d, m, mz, ms)
-        }
+        },
+        Vec(a, n) => Value::Vec(Box::new(eval_down(a, d.clone())), Box::new(eval_down(n, d))),
+        Nil(a) => Value::Nil(Box::new(eval_down(a, d))),
+        Cons(a, k, x, xs) => Value::Cons(Box::new(eval_down(a, d.clone())), Box::new(eval_down(k, d.clone())),
+                                         Box::new(eval_down(x, d.clone())), Box::new(eval_down(xs, d))),
+        VecElim(a, m, mn, mc, k, xs) => {
+            let mn = eval_down(mn, d.clone());
+            let mc = eval_down(mc, d.clone());
+            fn rec(k: Value, xs: Value, d: Env, a: Checkable, m: Checkable, mn: Value, mc: Value) -> Value {
+                match xs {
+                    Value::Nil(_) => mn,
+                    Value::Cons(_, box l, box x, box xs) =>
+                        vec![l.clone(), x, xs.clone(), rec(l, xs, d.clone(), a, m, mn, mc.clone())].into_iter().fold(mc, vapp),
+                    Value::Neutral(n) => Value::Neutral(
+                        Neutral::VecElim(Box::new(eval_down(a, d.clone())),
+                                         Box::new(eval_down(m, d)), Box::new(mn), Box::new(mc),
+                                         Box::new(k), Box::new(n))),
+                    _ => panic!("internal: eval vecElim"),
+                }
+            }
+            rec(eval_down(k, d.clone()), eval_down(xs, d.clone()), d, a, m, mn, mc)
+        },
     }
 }
 
@@ -168,7 +197,7 @@ fn type_up(i: usize, mut ctx: Context, term: Inferable) -> Result<Info> {
             Ok(Value::Nat)
         },
         NatElim(m, mz, ms, k)=> {
-            try!(type_down(i, ctx.clone(), m.clone(), Value::Pi(Box::new(Value::Nat), Rc::new(move |x| Value::Star))));
+            try!(type_down(i, ctx.clone(), m.clone(), Value::Pi(Box::new(Value::Nat), Rc::new(move |_| Value::Star))));
             let m = eval_down(m, Env::new());
             try!(type_down(i, ctx.clone(), mz, vapp(m.clone(), Value::Zero)));
             let m_ = m.clone();
@@ -181,6 +210,64 @@ fn type_up(i: usize, mut ctx: Context, term: Inferable) -> Result<Info> {
             try!(type_down(i, ctx.clone(), k.clone(), Value::Nat));
             let k = eval_down(k, Env::new());
             Ok(vapp(m_, k))
+        },
+        Vec(a, k) => {
+            try!(type_down(i, ctx.clone(), a, Value::Star));
+            try!(type_down(i, ctx, k, Value::Nat));
+            Ok(Value::Star)
+        },
+        Nil(a) => {
+            try!(type_down(i, ctx, a.clone(), Value::Star));
+            let a = eval_down(a, Env::new());
+            Ok(Value::Vec(Box::new(a), Box::new(Value::Zero)))
+        },
+        Cons(a, k, x, xs) => {
+            try!(type_down(i, ctx.clone(), a.clone(), Value::Star));
+            let a = eval_down(a, Env::new());
+            try!(type_down(i, ctx.clone(), k.clone(), Value::Nat));
+            let k = eval_down(k, Env::new());
+            try!(type_down(i, ctx.clone(), x, a.clone()));
+            try!(type_down(i, ctx, xs, Value::Vec(Box::new(a.clone()), Box::new(k.clone()))));
+            Ok(Value::Vec(Box::new(a), Box::new(Value::Succ(Box::new(k)))))
+        },
+        VecElim(a, m, mn, mc, k, vs) => {
+            try!(type_down(i, ctx.clone(), a.clone(), Value::Star));
+            let a = eval_down(a, Env::new());
+            let a_ = a.clone();
+            try!(type_down(i, ctx.clone(), m.clone(),
+                 Value::Pi(Box::new(Value::Nat), Rc::new(move |k|
+                 Value::Pi(Box::new(Value::Vec(Box::new(a_.clone()), Box::new(k))), Rc::new(move |_|
+                 Value::Star))))));
+            let m = eval_down(m, Env::new());
+            try!(type_down(i, ctx.clone(), mn, vec![Value::Zero, Value::Nil(Box::new(a.clone()))]
+                           .into_iter().fold(m.clone(), vapp)));
+            let m_ = m.clone();
+            let a_ = a.clone();
+            try!(type_down(i, ctx.clone(), mc, Value::Pi(Box::new(Value::Nat), Rc::new(move |l| {
+                let a_ = a_.clone();
+                let m_ = m_.clone();
+                let l_ = l.clone();
+                Value::Pi(Box::new(a_.clone()), Rc::new(move |y| {
+                let a_ = a_.clone();
+                let m_ = m_.clone();
+                let l_ = l_.clone();
+                let y_ = y.clone();
+                Value::Pi(Box::new(Value::Vec(Box::new(a_.clone()), Box::new(l_.clone()))), Rc::new(move |ys| {
+                let a_ = a_.clone();
+                let m_ = m_.clone();
+                let l_ = l_.clone();
+                let y_ = y_.clone();
+                let ys_ = ys.clone();
+                Value::Pi(Box::new(vec![l_.clone(), ys_.clone()].into_iter().fold(m_.clone(), vapp)), Rc::new(move |_|
+                vec![Value::Succ(Box::new(l_.clone())),
+                     Value::Cons(Box::new(a_.clone()), Box::new(l_.clone()), Box::new(y_.clone()),
+                                 Box::new(ys_.clone()))].into_iter().fold(m_.clone(), vapp)))
+            }))}))}))));
+            try!(type_down(i, ctx.clone(), k.clone(), Value::Nat));
+            let k = eval_down(k, Env::new());
+            try!(type_down(i, ctx, vs.clone(), Value::Vec(Box::new(a), Box::new(k.clone()))));
+            let vs = eval_down(vs, Env::new());
+            Ok(vec![k, vs].into_iter().fold(m, vapp))
         },
     }
 }
@@ -212,14 +299,23 @@ fn subst_up(i: usize, r: Inferable, term: Inferable) -> Inferable {
         Free(y) => Free(y),
         App(box e, e_) => {
             let term = subst_down(i, r.clone(), e_);
-            App(Box::new(subst_up(i, r.clone(), e)), term)
+            App(Box::new(subst_up(i, r, e)), term)
         },
         Nat => Nat,
         Zero => Zero,
         Succ(k) => Succ(subst_down(i, r, k)),
         NatElim(m, mz, ms, k) =>
             NatElim(subst_down(i, r.clone(), m), subst_down(i, r.clone(), mz),
-                    subst_down(i, r.clone(), ms), subst_down(i, r, k))
+                    subst_down(i, r.clone(), ms), subst_down(i, r, k)),
+        Vec(a, n) => Vec(subst_down(i, r.clone(), a), subst_down(i, r, n)),
+        Nil(a) => Nil(subst_down(i, r, a)),
+        Cons(a, k, x, xs) =>
+            Cons(subst_down(i, r.clone(), a), subst_down(i, r.clone(), k),
+                 subst_down(i, r.clone(), x), subst_down(i, r.clone(), xs)),
+        VecElim(a, m, mn, mc, k, vs) =>
+            VecElim(subst_down(i, r.clone(), a), subst_down(i, r.clone(), m),
+                    subst_down(i, r.clone(), mn), subst_down(i, r.clone(), mc),
+                    subst_down(i, r.clone(), k), subst_down(i, r, vs)),
     }
 }
 
@@ -244,6 +340,11 @@ fn quote(i: usize, value: Value) -> Checkable {
         Value::Nat => Checkable::Inf(Box::new(Inferable::Nat)),
         Value::Zero => Checkable::Inf(Box::new(Inferable::Zero)),
         Value::Succ(box v) => Checkable::Inf(Box::new(Inferable::Succ(quote(i, v)))),
+        Value::Vec(box a, box n) => Checkable::Inf(Box::new(Inferable::Vec(quote(i, a), quote(i, n)))),
+        Value::Nil(box a) => Checkable::Inf(Box::new(Inferable::Nil(quote(i, a)))),
+        Value::Cons(box a, box k, box x, box xs) =>
+            Checkable::Inf(Box::new(Inferable::Cons(quote(i, a), quote(i, k), quote(i, x),
+                                                    quote(i, xs)))),
     }
 }
 
@@ -253,7 +354,10 @@ fn neutral_quote(i: usize, neutral: Neutral) -> Inferable {
         Neutral::App(box n, box v) => Inferable::App(Box::new(neutral_quote(i, n)), quote(i, v)),
         Neutral::NatElim(box m, box mz, box ms, box k) =>
             Inferable::NatElim(quote(i, m), quote(i, mz), quote(i, ms),
-                               Checkable::Inf(Box::new(neutral_quote(i, k))))
+                               Checkable::Inf(Box::new(neutral_quote(i, k)))),
+        Neutral::VecElim(box a, box m, box mn, box mc, box k, box vs) =>
+            Inferable::VecElim(quote(i, a), quote(i, m), quote(i, mn), quote(i, mc), quote(i, k),
+                               Checkable::Inf(Box::new(neutral_quote(i, vs)))),
     }
 }
 
@@ -278,23 +382,23 @@ fn global_sub_up(r: &Bindings, term: Inferable) -> Inferable {
         Free(n) => Free(n),
         App(box e, e_) => {
             let term = global_sub_down(r, e_);
-            let e = global_sub_up(r, e);
-            match (e, term) {
-                (App(box App(box App(box Free(Name::Global(y)), m), mz), ms), k) =>
-                    if y == "natElim" {
-                        NatElim(m, mz, ms, k)
-                    } else {
-                        App(Box::new(App(Box::new(App(Box::new(App(Box::new(Free(Name::Global(y))), m)), mz)), ms)), k)
-                    },
-                (e, term) => App(Box::new(e), term)
-            }
+            App(Box::new(global_sub_up(r, e)), term)
         },
         Nat => Nat,
         Zero => Zero,
         Succ(k) => Succ(global_sub_down(r, k)),
         NatElim(m, mz, ms, k) =>
             NatElim(global_sub_down(r, m), global_sub_down(r, mz),
-                    global_sub_down(r, ms), global_sub_down(r, k))
+                    global_sub_down(r, ms), global_sub_down(r, k)),
+        Vec(a, n) => Vec(global_sub_down(r, a), global_sub_down(r, n)),
+        Nil(a) => Nil(global_sub_down(r, a)),
+        Cons(a, k, x, xs) =>
+            Cons(global_sub_down(r, a), global_sub_down(r, k),
+                 global_sub_down(r, x), global_sub_down(r, xs)),
+        VecElim(a, m, mn, mc, k, vs) =>
+            VecElim(global_sub_down(r, a), global_sub_down(r, m),
+                    global_sub_down(r, mn), global_sub_down(r, mc),
+                    global_sub_down(r, k), global_sub_down(r, vs)),
     }
 }
 
@@ -320,7 +424,16 @@ fn find_up(i: &Name, term: &Inferable) -> bool {
         Succ(ref k) => find_down(i, k),
         NatElim(ref m, ref mz, ref ms, ref k) =>
             find_down(i, m) || find_down(i, mz) ||
-            find_down(i, ms) || find_down(i, k)
+            find_down(i, ms) || find_down(i, k),
+        Vec(ref a, ref n) => find_down(i, a) || find_down(i, n),
+        Nil(ref a) => find_down(i, a),
+        Cons(ref a, ref k, ref x, ref xs) =>
+            find_down(i, a) || find_down(i, k) ||
+            find_down(i, x) || find_down(i, xs),
+        VecElim(ref a, ref m, ref mn, ref mc, ref k, ref vs) =>
+            find_down(i, a) || find_down(i, m) ||
+            find_down(i, mn) || find_down(i, mc) ||
+            find_down(i, k) || find_down(i, vs),
     }
 }
 
@@ -350,16 +463,16 @@ fn print_up(term: Inferable, mut d: VecDeque<usize>, assoc: Assoc) -> String {
             let t = print_down(t, d.clone(), Assoc::Right);
             let x = bound_name(&t_, &mut d);
             match assoc {
-                Assoc::Left => format!("(Π (v{} : {}) → {})", x, t, print_down(t_, d, Assoc::Right)),
-                Assoc::Right => format!("Π (v{} : {}) → {}", x, t, print_down(t_, d, Assoc::Right)),
+                Assoc::Left => format!("(Π (v{} : {}) → {})", x, t, print_down(t_, d, Assoc::Left)),
+                Assoc::Right => format!("Π (v{} : {}) → {}", x, t, print_down(t_, d, Assoc::Left)),
             }
         },
         Free(Name::Global(x)) => x,
         Free(n) => panic!("Did not expect {:?} during print_up", n),
         Bound(i) => format!("v{}", d[i]),
         App(box e, e_) => match assoc {
-            Assoc::Left => format!("{} ({})", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Right)),
-            Assoc::Right => format!("({} {})", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Right)),
+            Assoc::Left => format!("{} {}", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Left)),
+            Assoc::Right => format!("({} {})", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Left)),
         },
         Nat => "Nat".into(),
         Zero => "0".into(),
@@ -372,19 +485,29 @@ fn print_up(term: Inferable, mut d: VecDeque<usize>, assoc: Assoc) -> String {
             }
             match k_ {
                 Checkable::Inf(box Zero) => format!("{}", n),
-                _ => print_up(App(Box::new(Free(Name::Global("Succ".into()))), k), d, assoc),
+                _ => print_up(App(Box::new(Free(Name::Global("Succ".into()))), k), d, Assoc::Left),
             }
         },
         NatElim(m, mz, ms, k) => print_up(App(
             Box::new(App(Box::new(App(Box::new(App(Box::new(Free(Name::Global("natElim".into()))),
-                                                   m)), mz)), ms)), k), d, assoc),
+                                                   m)), mz)), ms)), k), d, Assoc::Left),
+        Vec(a, n) => print_up(App(Box::new(App(Box::new(Free(Name::Global("Vec".into()))), a)), n),
+                              d, Assoc::Left),
+        Nil(a) => print_up(App(Box::new(Free(Name::Global("Nil".into()))), a), d, Assoc::Left),
+        Cons(a, k, x, xs) => print_up(App(
+            Box::new(App(Box::new(App(Box::new(App(Box::new(Free(Name::Global("Cons".into()))),
+                                                   a)), k)), x)), xs), d, Assoc::Left),
+        VecElim(a, m, mn, mc, k, vs) => print_up(App(
+            Box::new(App(Box::new(App(
+            Box::new(App(Box::new(App(Box::new(App(Box::new(Free(Name::Global("vecElim".into()))),
+                                                   a)), m)), mn)), mc)), k)), vs), d, Assoc::Left),
     }
 }
 
 fn print_down(term: Checkable, mut d: VecDeque<usize>, assoc:Assoc) -> String {
     use self::Checkable::*;
     match term {
-        Inf(box i) => format!("{}", print_up(i, d, assoc)),
+        Inf(box i) => format!("{}", print_up(i, d, Assoc::Right)),
         Lam(box e) => {
             let x = bound_name(&e, &mut d);
             match assoc {
@@ -410,8 +533,11 @@ fn main() {
 
     let mut bindings = HashMap::new();
 
-    let nat_elim = eval_up(parser::parse("pi (m : Nat -> *) -> (m Zero) -> (pi (l : Nat ) -> (m l) -> (m (Succ l))) -> pi (k: Nat) -> (m k)", &mut env, &mut bindings).unwrap().unwrap(), Env::new());
-    env.push_front((Name::Global("natElim".into()), nat_elim));
+    /*let nat_elim = eval_up(parser::parse("pi (m : Nat -> *) -> (m Zero) -> (pi (l : Nat ) -> (m l) -> (m (Succ l))) -> pi (k: Nat) -> (m k)", &mut env, &mut bindings).unwrap().unwrap(), Env::new());
+    env.push_front((Name::Global("natElim".into()), nat_elim));*/
+    /*let vec_elim = eval_up(parser::parse("pi (a : * ) -> pi (m : pi (k : Nat) -> Vec a k -> *) -> (m Zero (Nil a)) -> (pi (l : Nat) -> pi (x : a) -> pi (xs : Vec a l) -> (m l xs) -> (m (Succ l) (Cons a l x xs))) -> pi (k : Nat) -> pi (xs : Vec a k) -> (m k xs)", &mut env, &mut bindings).unwrap().unwrap(), Env::new());
+    /*let vec_elim = eval_up(parser::parse("(Π (v1 : *) → Π (v2 : Π (v2 : Nat) → Π (v3 : (Vec (v1) v2)) → *) → Π (v3 : (v2 (0) (Nil v1))) → Π (v4 : Π (v4 : Nat) → Π (v5 : v1) → Π (v6 : (Vec (v1) v4)) → Π (v7 : (v2 (v4) v6)) → (v2 ((Succ v4)) (Cons (v1) (v4) (v5) v6))) → Π (v5 : Nat) → Π (v6 : (Vec (v1) v5)) → (v2 (v5) v6)) : *", &mut env, &mut bindings).unwrap().unwrap(), Env::new());*/
+    env.push_front((Name::Global("vecElim".into()), vec_elim));*/
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();

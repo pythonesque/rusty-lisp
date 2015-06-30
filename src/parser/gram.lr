@@ -19,6 +19,7 @@ grammar {
         "let" => "Let";
         "=" => "Eq";
         "natElim" => "NatElim";
+        "vecElim" => "VecElim";
     };
 
     pub S = Stmt;
@@ -79,11 +80,15 @@ grammar {
         "Ident" => Free(Global(~~.as_ident()));
         "(" ~Inf ")";
         "*" => Star;
+        "Usize" => (0..~~.as_usize()).fold(Zero, |n, _| Succ(Inf(Box::new(n))));
         "Zero" => Zero;
         "Nat" => Nat;
-        "Usize" => (0..~~.as_usize()).fold(Zero, |n, _| Succ(Inf(Box::new(n))));
         "Succ" ~AtomCheck => Succ(~~);
-        "natElim" => Free(Global("natElim".into()));
+        "natElim" m:AtomCheck mz:AtomCheck ms:AtomCheck k:AtomCheck => NatElim(m, mz, ms, k);
+        "Vec" a:AtomCheck n:AtomCheck => Vec(a, n);
+        "Nil" ~AtomCheck => Nil(~~);
+        "Cons" a:AtomCheck k:AtomCheck x:AtomCheck xs:AtomCheck => Cons(a, k, x, xs);
+        "vecElim" a:AtomCheck m:AtomCheck mn:AtomCheck mc:AtomCheck k:AtomCheck vs:AtomCheck => VecElim(a, m, mn, mc, k, vs);
     };
 
     AtomCheck: Checkable = {

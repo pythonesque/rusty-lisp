@@ -24,7 +24,16 @@ fn de_bruijn_up(i: Name, r: usize, term: Inferable) -> Inferable {
         Succ(k) => Succ(de_bruijn_down(i, r, k)),
         NatElim(m, mz, ms, k) =>
             NatElim(de_bruijn_down(i.clone(), r, m), de_bruijn_down(i.clone(), r, mz),
-                    de_bruijn_down(i.clone(), r, ms), de_bruijn_down(i, r, k))
+                    de_bruijn_down(i.clone(), r, ms), de_bruijn_down(i, r, k)),
+        Vec(a, n) => Vec(de_bruijn_down(i.clone(), r, a), de_bruijn_down(i, r, n)),
+        Nil(a) => Nil(de_bruijn_down(i, r, a)),
+        Cons(a, k, x, xs) =>
+            Cons(de_bruijn_down(i.clone(), r, a), de_bruijn_down(i.clone(), r, k),
+                 de_bruijn_down(i.clone(), r, x), de_bruijn_down(i, r, xs)),
+        VecElim(a, m, mn, mc, k, vs) =>
+            VecElim(de_bruijn_down(i.clone(), r, a), de_bruijn_down(i.clone(), r, m),
+                    de_bruijn_down(i.clone(), r, mn), de_bruijn_down(i.clone(), r, mc),
+                    de_bruijn_down(i.clone(), r, k), de_bruijn_down(i, r, vs)),
     }
 }
 
@@ -85,6 +94,10 @@ fn token(ctx: &mut Ctx) -> Option<Tok> {
                         "Nat" => Nat,
                         "Succ" => Succ,
                         "natElim" => NatElim,
+                        "Vec" => Vec,
+                        "Nil" => Nil,
+                        "Cons" => Cons,
+                        "vecElim" => VecElim,
                         i => Ident(i.into())
                     }
                 },
@@ -107,11 +120,15 @@ pub enum Tok {
     Pi,
     Let,
     Eq,
+    Usize(usize), // Max is higher than max representable as linked list.
     Zero,
     Nat,
     Succ,
     NatElim,
-    Usize(usize), // Max is higher than max representable as linked list.
+    Vec,
+    Nil,
+    Cons,
+    VecElim,
 }
 
 pub enum Stmt {
