@@ -21,4 +21,6 @@ let append = (λa → λm → λv → vecElim a (λm → λ v → Π (n:Nat) →
 
 assume (a : *) (x : a) (y : a)
 
+append a 0 Nil a
+append a 1 Cons a 0 x Nil a
 append a 2 (Cons a 1 x (Cons a 0 x (Nil a))) 1 (Cons a 0 y (Nil a))
