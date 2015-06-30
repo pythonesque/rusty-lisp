@@ -212,22 +212,19 @@ fn type_up(i: usize, mut ctx: Context, term: Inferable) -> Result<Info> {
             try!(type_down(i, ctx.clone(), mc, Value::Pi(Box::new(Value::Nat), Rc::new(move |l| {
                 let a_ = a_.clone();
                 let m_ = m_.clone();
-                let l_ = l.clone();
                 Value::Pi(Box::new(a_.clone()), Rc::new(move |y| {
                 let a_ = a_.clone();
                 let m_ = m_.clone();
-                let l_ = l_.clone();
-                let y_ = y.clone();
+                let l_ = l.clone();
                 Value::Pi(Box::new(Value::Vec(Box::new(a_.clone()), Box::new(l_.clone()))), Rc::new(move |ys| {
                 let a_ = a_.clone();
                 let m_ = m_.clone();
                 let l_ = l_.clone();
-                let y_ = y_.clone();
-                let ys_ = ys.clone();
-                Value::Pi(Box::new(vec![l_.clone(), ys_.clone()].into_iter().fold(m_.clone(), vapp)), Rc::new(move |_|
+                let y_ = y.clone();
+                Value::Pi(Box::new(vec![l_.clone(), ys.clone()].into_iter().fold(m_.clone(), vapp)), Rc::new(move |_|
                 vec![Value::Succ(Box::new(l_.clone())),
                      Value::Cons(Box::new(a_.clone()), Box::new(l_.clone()), Box::new(y_.clone()),
-                                 Box::new(ys_.clone()))].into_iter().fold(m_.clone(), vapp)))
+                                 Box::new(ys.clone()))].into_iter().fold(m_.clone(), vapp)))
             }))}))}))));
             try!(type_down(i, ctx.clone(), k.clone(), Value::Nat));
             let k = eval_down(k, Env::new());
