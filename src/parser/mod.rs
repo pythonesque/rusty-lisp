@@ -19,6 +19,12 @@ fn de_bruijn_up(i: Name, r: usize, term: Inferable) -> Inferable {
             let term = de_bruijn_down(i.clone(), r, e_);
             App(Box::new(de_bruijn_up(i, r, e)), term)
         },
+        Nat => Nat,
+        Zero => Zero,
+        Succ(k) => Succ(de_bruijn_down(i, r, k)),
+        NatElim(m, mz, ms, k) =>
+            NatElim(de_bruijn_down(i.clone(), r, m), de_bruijn_down(i.clone(), r, mz),
+                    de_bruijn_down(i.clone(), r, ms), de_bruijn_down(i, r, k))
     }
 }
 
@@ -54,6 +60,16 @@ fn token(ctx: &mut Ctx) -> Option<Tok> {
                     },
                     _ => Error
                 },
+                '0' => Usize(0),
+                '1'...'9' => {
+                    let (end, lch) = cur
+                        .char_indices()
+                        .take_while( |&(_, ch)| ch.is_digit(10) )
+                        .last().unwrap();
+                    let end = end + lch.len_utf8();
+                    ctx.cur = Some(&cur[end ..]);
+                    cur[..end].parse().map(Usize).unwrap_or(Error)
+                },
                 ch if ch.is_alphabetic() => {
                     let (end, lch) = cur
                         .char_indices()
@@ -65,6 +81,10 @@ fn token(ctx: &mut Ctx) -> Option<Tok> {
                         "fn" => Lambda,
                         "pi" => Pi,
                         "let" => Let,
+                        "Zero" => Zero,
+                        "Nat" => Nat,
+                        "Succ" => Succ,
+                        "natElim" => NatElim,
                         i => Ident(i.into())
                     }
                 },
@@ -87,6 +107,11 @@ pub enum Tok {
     Pi,
     Let,
     Eq,
+    Zero,
+    Nat,
+    Succ,
+    NatElim,
+    Usize(usize), // Max is higher than max representable as linked list.
 }
 
 pub enum Stmt {
@@ -100,6 +125,13 @@ impl Tok {
         match self {
             Tok::Ident(i) => i,
             _ => panic!("as_ident() invoked with a non-identifier"),
+        }
+    }
+
+    fn as_usize(self) -> usize {
+        match self {
+            Tok::Usize(i) => i,
+            _ => panic!("as_usize() invoked with a non-usize"),
         }
     }
 }

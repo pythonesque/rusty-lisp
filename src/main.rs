@@ -16,6 +16,10 @@ pub enum Inferable {
     Bound(usize),
     Free(Name),
     App(Box<Inferable>, Checkable),
+    Nat,
+    NatElim(Checkable, Checkable, Checkable, Checkable),
+    Zero,
+    Succ(Checkable),
 }
 
 #[derive(Clone,PartialEq,Debug)]
@@ -39,12 +43,16 @@ enum Value {
     Star,
     Pi(Box<Info>, Rc<Fn(Value) -> Value>),
     Neutral(Neutral),
+    Nat,
+    Zero,
+    Succ(Box<Value>),
 }
 
 #[derive(Clone)]
 enum Neutral {
     Free(Name),
     App(Box<Neutral>, Box<Value>),
+    NatElim(Box<Value>, Box<Value>, Box<Value>, Box<Neutral>),
 }
 
 fn vfree(name: Name) -> Value {
@@ -72,6 +80,24 @@ fn eval_up(term: Inferable, d: Env) -> Value {
             let e_ = eval_down(e_, d);
             vapp(e, e_)
         },
+        Nat => Value::Nat,
+        Zero => Value::Zero,
+        Succ(k) => Value::Succ(Box::new(eval_down(k, d))),
+        NatElim(m, mz, ms, k) => {
+            let mz = eval_down(mz, d.clone());
+            let ms = eval_down(ms, d.clone());
+            fn rec(k: Value, d: Env, m: Checkable, mz: Value, ms: Value) -> Value {
+                match k {
+                    Value::Zero => mz,
+                    Value::Succ(box l) => vapp(vapp(ms.clone(), l.clone()), rec(l, d, m, mz, ms)),
+                    Value::Neutral(k) =>
+                        Value::Neutral(Neutral::NatElim(Box::new(eval_down(m, d.clone())), Box::new(mz),
+                                                        Box::new(ms), Box::new(k))),
+                    _ => panic!("internal: eval natElim"),
+                }
+            }
+            rec(eval_down(k, d.clone()), d, m, mz, ms)
+        }
     }
 }
 
@@ -135,6 +161,27 @@ fn type_up(i: usize, mut ctx: Context, term: Inferable) -> Result<Info> {
             }
         },
         Bound(_) => panic!("Should never see a bound variable here, as this should be taken care of in the type rule for lambda abstraction."),
+        Nat => Ok(Value::Star),
+        Zero => Ok(Value::Nat),
+        Succ(k) => {
+            try!(type_down(i, ctx, k, Value::Nat));
+            Ok(Value::Nat)
+        },
+        NatElim(m, mz, ms, k)=> {
+            try!(type_down(i, ctx.clone(), m.clone(), Value::Pi(Box::new(Value::Nat), Rc::new(move |x| Value::Star))));
+            let m = eval_down(m, Env::new());
+            try!(type_down(i, ctx.clone(), mz, vapp(m.clone(), Value::Zero)));
+            let m_ = m.clone();
+            try!(type_down(i, ctx.clone(), ms, Value::Pi(Box::new(Value::Nat), Rc::new(move |l| {
+                let m_ = m.clone();
+                let l_ = l.clone();
+                Value::Pi(Box::new(vapp(m.clone(), l.clone())), Rc::new(move |_|
+                    vapp(m_.clone(), Value::Succ(Box::new(l_.clone())))))
+            }))));
+            try!(type_down(i, ctx.clone(), k.clone(), Value::Nat));
+            let k = eval_down(k, Env::new());
+            Ok(vapp(m_, k))
+        },
     }
 }
 
@@ -167,6 +214,12 @@ fn subst_up(i: usize, r: Inferable, term: Inferable) -> Inferable {
             let term = subst_down(i, r.clone(), e_);
             App(Box::new(subst_up(i, r.clone(), e)), term)
         },
+        Nat => Nat,
+        Zero => Zero,
+        Succ(k) => Succ(subst_down(i, r, k)),
+        NatElim(m, mz, ms, k) =>
+            NatElim(subst_down(i, r.clone(), m), subst_down(i, r.clone(), mz),
+                    subst_down(i, r.clone(), ms), subst_down(i, r, k))
     }
 }
 
@@ -188,6 +241,9 @@ fn quote(i: usize, value: Value) -> Checkable {
         Value::Star => Checkable::Inf(Box::new(Inferable::Star)),
         Value::Pi(box v, f) => Checkable::Inf(Box::new(Inferable::Pi(quote(i, v), quote(i + 1, f(vfree(Name::Quote(i))))))),
         Value::Neutral(n) => Checkable::Inf(Box::new(neutral_quote(i, n))),
+        Value::Nat => Checkable::Inf(Box::new(Inferable::Nat)),
+        Value::Zero => Checkable::Inf(Box::new(Inferable::Zero)),
+        Value::Succ(box v) => Checkable::Inf(Box::new(Inferable::Succ(quote(i, v)))),
     }
 }
 
@@ -195,6 +251,9 @@ fn neutral_quote(i: usize, neutral: Neutral) -> Inferable {
     match neutral {
         Neutral::Free(x) => boundfree(i, x),
         Neutral::App(box n, box v) => Inferable::App(Box::new(neutral_quote(i, n)), quote(i, v)),
+        Neutral::NatElim(box m, box mz, box ms, box k) =>
+            Inferable::NatElim(quote(i, m), quote(i, mz), quote(i, ms),
+                               Checkable::Inf(Box::new(neutral_quote(i, k))))
     }
 }
 
@@ -219,8 +278,23 @@ fn global_sub_up(r: &Bindings, term: Inferable) -> Inferable {
         Free(n) => Free(n),
         App(box e, e_) => {
             let term = global_sub_down(r, e_);
-            App(Box::new(global_sub_up(r, e)), term)
+            let e = global_sub_up(r, e);
+            match (e, term) {
+                (App(box App(box App(box Free(Name::Global(y)), m), mz), ms), k) =>
+                    if y == "natElim" {
+                        NatElim(m, mz, ms, k)
+                    } else {
+                        App(Box::new(App(Box::new(App(Box::new(App(Box::new(Free(Name::Global(y))), m)), mz)), ms)), k)
+                    },
+                (e, term) => App(Box::new(e), term)
+            }
         },
+        Nat => Nat,
+        Zero => Zero,
+        Succ(k) => Succ(global_sub_down(r, k)),
+        NatElim(m, mz, ms, k) =>
+            NatElim(global_sub_down(r, m), global_sub_down(r, mz),
+                    global_sub_down(r, ms), global_sub_down(r, k))
     }
 }
 
@@ -238,9 +312,15 @@ fn find_up(i: &Name, term: &Inferable) -> bool {
         Ann(ref e, ref t) => find_down(i, e) || find_down(i, t),
         Star => false,
         Pi(ref t, ref t_) => find_down(i, t) || find_down(i, t_),
-        Bound(j) => false,
+        Bound(_) => false,
         Free(ref y) => y == i,
         App(box ref e, ref e_) => find_down(i, e_) || find_up(i, e),
+        Nat => false,
+        Zero => false,
+        Succ(ref k) => find_down(i, k),
+        NatElim(ref m, ref mz, ref ms, ref k) =>
+            find_down(i, m) || find_down(i, mz) ||
+            find_down(i, ms) || find_down(i, k)
     }
 }
 
@@ -253,7 +333,7 @@ fn find_down(i: &Name, term: &Checkable) -> bool {
 }
 
 fn bound_name(term: &Checkable, d: &mut VecDeque<usize>) -> usize {
-   let mut x = d.iter().rev().next().map(|&x|x).unwrap_or(d.len()) + 1;
+   let mut x = d.iter().next().map(|&x|x).unwrap_or(d.len()) + 1;
    while find_down(&Name::Global(format!("v{}", x)), term) { x = x + 1; }
    d.push_front(x);
    x
@@ -278,9 +358,26 @@ fn print_up(term: Inferable, mut d: VecDeque<usize>, assoc: Assoc) -> String {
         Free(n) => panic!("Did not expect {:?} during print_up", n),
         Bound(i) => format!("v{}", d[i]),
         App(box e, e_) => match assoc {
-            Assoc::Left => format!("{} {}", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Right)),
+            Assoc::Left => format!("{} ({})", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Right)),
             Assoc::Right => format!("({} {})", print_up(e, d.clone(), Assoc::Left), print_down(e_, d, Assoc::Right)),
         },
+        Nat => "Nat".into(),
+        Zero => "0".into(),
+        Succ(k) => {
+            let mut n = 1;
+            let mut k_ = k.clone();
+            while let Checkable::Inf(box Succ(k)) = k_ {
+                n += 1;
+                k_ = k;
+            }
+            match k_ {
+                Checkable::Inf(box Zero) => format!("{}", n),
+                _ => print_up(App(Box::new(Free(Name::Global("Succ".into()))), k), d, assoc),
+            }
+        },
+        NatElim(m, mz, ms, k) => print_up(App(
+            Box::new(App(Box::new(App(Box::new(App(Box::new(Free(Name::Global("natElim".into()))),
+                                                   m)), mz)), ms)), k), d, assoc),
     }
 }
 
@@ -312,6 +409,9 @@ fn main() {
     let mut env = VecDeque::new();
 
     let mut bindings = HashMap::new();
+
+    let nat_elim = eval_up(parser::parse("pi (m : Nat -> *) -> (m Zero) -> (pi (l : Nat ) -> (m l) -> (m (Succ l))) -> pi (k: Nat) -> (m k)", &mut env, &mut bindings).unwrap().unwrap(), Env::new());
+    env.push_front((Name::Global("natElim".into()), nat_elim));
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();

@@ -18,6 +18,7 @@ grammar {
         "assume" => "Assume";
         "let" => "Let";
         "=" => "Eq";
+        "natElim" => "NatElim";
     };
 
     pub S = Stmt;
@@ -78,6 +79,11 @@ grammar {
         "Ident" => Free(Global(~~.as_ident()));
         "(" ~Inf ")";
         "*" => Star;
+        "Zero" => Zero;
+        "Nat" => Nat;
+        "Usize" => (0..~~.as_usize()).fold(Zero, |n, _| Succ(Inf(Box::new(n))));
+        "Succ" ~AtomCheck => Succ(~~);
+        "natElim" => Free(Global("natElim".into()));
     };
 
     AtomCheck: Checkable = {
