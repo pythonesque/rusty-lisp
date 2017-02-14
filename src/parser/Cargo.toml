@@ -1,10 +1,13 @@
 [package]
-
 name = "parser"
 version = "0.0.1"
 authors = ["Joshua Yanovski <pythonesque@gmail.com>"]
+
 build = "build.rs"
 exclude = ["src/gram.rs", "*.swp"]
 
+[dependencies.lalrpop-util]
+version = "0.12.5"
+
 [build-dependencies.lalrpop]
-git = "https://github.com/nikomatsakis/lalrpop.git"
+version = "0.12.5"

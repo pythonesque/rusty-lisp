@@ -8,7 +8,7 @@ use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
 #[derive(Clone)]
-enum Value {
+pub enum Value {
     Lam(Rc<Fn(Value) -> Value>),
     Star,
     Pi(Box<Info>, Rc<Fn(Value) -> Value>),
@@ -22,7 +22,7 @@ enum Value {
 }
 
 #[derive(Clone)]
-enum Neutral {
+pub enum Neutral {
     Free(Name),
     App(Box<Neutral>, Box<Value>),
     NatElim(Box<Value>, Box<Value>, Box<Value>, Box<Neutral>),
@@ -493,7 +493,7 @@ pub fn parse(s: &str, ctx: &mut Context, bindings: &mut Bindings) -> ::std::resu
     use parser::Stmt::*;
 
     match parser::parse(s) {
-        Some(res) => res.map( |(_, inf)| match inf {
+        Some(res) => res.map( |inf| match inf {
             Decl(d) => {
                 for (v, c) in d {
                     let c = global_sub_down(bindings, c);

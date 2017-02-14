@@ -1,102 +1,112 @@
-grammar {
-    use ::{Checkable, de_bruijn_down, Inferable, Name, Tok, Stmt};
-    use Checkable::*;
-    use Inferable::*;
-    use Name::*;
-    use Stmt::*;
-    use std::collections::VecDeque;
+use ::{Checkable, de_bruijn_down, Inferable, Name, Tok, Stmt};
+use Checkable::*;
+use Name::*;
+use Stmt::*;
+use std::collections::VecDeque;
 
-    token Tok where {
-        "(" => "LParen";
-        ")" => "RParen";
-        "->" => "Arrow";
-        "fn" => "Lambda";
-        ":" => "Colon";
-        "*" => "Star";
-        "pi" => "Pi";
-        "assume" => "Assume";
-        "let" => "Let";
-        "=" => "Eq";
-        "natElim" => "NatElim";
-        "vecElim" => "VecElim";
-    };
+grammar;
 
-    pub S = Stmt;
+extern {
 
-    Stmt: Stmt = {
-        "assume" ~Context => Decl(~~);
-        "let" n:"Ident" "=" e:Expr => Bind(n.as_ident(), e);
-        Expr => Expr(~~);
-    };
-
-    Info: Checkable = Type;
-
-    Binding: (Name, Checkable) = n:"Ident" ":" i:Info => (Global(n.as_ident()), i);
-
-    BindingList: VecDeque<(Name, Checkable)> = {
-        "(" ~Binding ")" => {
-            let mut v = VecDeque::new();
-            v.push_back(~~);
-            v
-        };
-        v:BindingList "(" b:Binding ")" => {
-            let mut v = v;
-            v.push_back(b);
-            v
-        };
-    };
-
-    Context = {
-        Binding => {
-            let mut v = VecDeque::new();
-            v.push_back(~~);
-            v
-        };
-        BindingList;
-    };
-
-    PiType: Inferable = {
-        t1:AtomCheck "->" t2:Type => Pi(t1, t2);
-        "pi" "(" d:"Ident" ":" t:Type ")" "->" c:Type => Pi(t, de_bruijn_down(Global(d.as_ident()), 0, c));
-    };
-
-    Type: Checkable = {
-        PiType => Inf(Box::new(~~));
-        AtomCheck;
-    };
-
-    Expr: Inferable = Inf;
-
-    Inf: Inferable = {
-        AtomInf;
-        i:Inf c:AtomCheck => App(Box::new(i), c);
-        c:AtomCheck ":" t:Type => Ann(c, t);
-        e:Inf c:AtomCheck ":" t:Type => Ann(Inf(Box::new(App(Box::new(e), c))), t);
-        PiType;
-    };
-
-    AtomInf: Inferable = {
-        "Ident" => Free(Global(~~.as_ident()));
-        "(" ~Inf ")";
-        "*" => Star;
-        "Usize" => (0..~~.as_usize()).fold(Zero, |n, _| Succ(Inf(Box::new(n))));
-        "Zero" => Zero;
-        "Nat" => Nat;
-        "Succ" ~AtomCheck => Succ(~~);
-        "natElim" m:AtomCheck mz:AtomCheck ms:AtomCheck k:AtomCheck => NatElim(m, mz, ms, k);
-        "Vec" a:AtomCheck n:AtomCheck => Vec(a, n);
-        "Nil" ~AtomCheck => Nil(~~);
-        "Cons" a:AtomCheck k:AtomCheck x:AtomCheck xs:AtomCheck => Cons(a, k, x, xs);
-        "vecElim" a:AtomCheck m:AtomCheck mn:AtomCheck mc:AtomCheck k:AtomCheck vs:AtomCheck => VecElim(a, m, mn, mc, k, vs);
-    };
-
-    AtomCheck: Checkable = {
-        AtomInf => Inf(Box::new(~~));
-        "(" ~Check ")";
-    };
-
-    Check: Checkable = {
-        "fn" i:"Ident" "->" c:Check => Lam(Box::new(de_bruijn_down(Global(i.as_ident()), 0, c)));
-        "fn" d:"Ident" "->" i:Inf => Lam(Box::new(de_bruijn_down(Global(d.as_ident()), 0, Inf(Box::new(i)))));
-    };
+    enum Tok {
+        "(" => Tok::LParen,
+        ")" => Tok::RParen,
+        "->" => Tok::Arrow,
+        "fn" => Tok::Lambda,
+        ":" => Tok::Colon,
+        "*" => Tok::Star,
+        "pi" => Tok::Pi,
+        "assume" => Tok::Assume,
+        "let" => Tok::Let,
+        "=" => Tok::Eq,
+        "natElim" => Tok::NatElim,
+        "vecElim" => Tok::VecElim,
+        "Zero" => Tok::Zero,
+        "Nat" => Tok::Nat,
+        "Succ" => Tok::Succ,
+        "Vec" => Tok::Vec,
+        "Nil" => Tok::Nil,
+        "Cons" => Tok::Cons,
+        Ident => Tok::Ident(<String>),
+        Usize => Tok::Usize(<usize>),
+    }
 }
+
+pub S = Stmt;
+
+Stmt: Stmt = {
+    "assume" <Context> => Decl(<>),
+    "let" <n:Ident> "=" <e:Expr> => Bind(n, e),
+    Expr => Expr(<>),
+};
+
+Info: Checkable = Type;
+
+Binding: (Name, Checkable) = <n:Ident> ":" <i:Info> => (Global(n), i);
+
+BindingList: VecDeque<(Name, Checkable)> = {
+    "(" <Binding> ")" => {
+        let mut v = VecDeque::new();
+        v.push_back(<>);
+        v
+    },
+    <v:BindingList> "(" <b:Binding> ")" => {
+        let mut v = v;
+        v.push_back(b);
+        v
+    },
+};
+
+Context = {
+    Binding => {
+        let mut v = VecDeque::new();
+        v.push_back(<>);
+        v
+    },
+    BindingList,
+};
+
+PiType: Inferable = {
+    <t1:AtomCheck> "->" <t2:Type> => Inferable::Pi(t1, t2),
+    "pi" "(" <d:Ident> ":" <t:Type> ")" "->" <c:Type> => Inferable::Pi(t, de_bruijn_down(Global(d), 0, c)),
+};
+
+Type: Checkable = {
+    PiType => Inf(Box::new(<>)),
+    AtomCheck,
+};
+
+Expr: Inferable = Inf;
+
+Inf: Inferable = {
+    AtomInf,
+    <i:Inf> <c:AtomCheck> => Inferable::App(Box::new(i), c),
+    <c:AtomCheck> ":" <t:Type> => Inferable::Ann(c, t),
+    <e:Inf> <c:AtomCheck> ":" <t:Type> => Inferable::Ann(Inf(Box::new(Inferable::App(Box::new(e), c))), t),
+    PiType,
+};
+
+AtomInf: Inferable = {
+    Ident => Inferable::Free(Global(<>)),
+    "(" <Inf> ")",
+    "*" => Inferable::Star,
+    Usize => (0..<>).fold(Inferable::Zero, |n, _| Inferable::Succ(Inf(Box::new(n)))),
+    "Zero" => Inferable::Zero,
+    "Nat" => Inferable::Nat,
+    "Succ" <AtomCheck> => Inferable::Succ(<>),
+    "natElim" <m:AtomCheck> <mz:AtomCheck> <ms:AtomCheck> <k:AtomCheck> => Inferable::NatElim(m, mz, ms, k),
+    "Vec" <a:AtomCheck> <n:AtomCheck> => Inferable::Vec(a, n),
+    "Nil" <AtomCheck> => Inferable::Nil(<>),
+    "Cons" <a:AtomCheck> <k:AtomCheck> <x:AtomCheck> <xs:AtomCheck> => Inferable::Cons(a, k, x, xs),
+    "vecElim" <a:AtomCheck> <m:AtomCheck> <mn:AtomCheck> <mc:AtomCheck> <k:AtomCheck> <vs:AtomCheck> => Inferable::VecElim(a, m, mn, mc, k, vs),
+};
+
+AtomCheck: Checkable = {
+    AtomInf => Inf(Box::new(<>)),
+    "(" <Check> ")",
+};
+
+Check: Checkable = {
+    "fn" <i:Ident> "->" <c:Check> => Lam(Box::new(de_bruijn_down(Global(i), 0, c))),
+    "fn" <d:Ident> "->" <i:Inf> => Lam(Box::new(de_bruijn_down(Global(d), 0, Inf(Box::new(i))))),
+};

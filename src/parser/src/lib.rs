@@ -1,5 +1,4 @@
 #![feature(box_patterns)]
-#![feature(str_char)]
 
 mod gram;
 
@@ -78,12 +77,25 @@ fn de_bruijn_down(i: Name, r: usize, term: Checkable) -> Checkable {
 
 struct Ctx<'a> { tok: SplitWhitespace<'a>, cur: Option<&'a str> }
 
+fn char_at(s: &str, byte: usize) -> char {
+    s[byte..].chars().next().unwrap()
+}
+
+fn slice_shift_char(s: &str) -> Option<(char, &str)> {
+    if s.is_empty() {
+        None
+    } else {
+        let ch = char_at(s, 0);
+        Some((ch, &s[ch.len_utf8()..]))
+    }
+}
+
 fn token(ctx: &mut Ctx) -> Option<Tok> {
     use self::Tok::*;
     ctx.cur
         .and_then( |cur| if cur.is_empty() { ctx.tok.next() } else { Some(cur) } )
         .map( |cur| {
-            let (ch, cur_) = cur.slice_shift_char().unwrap();
+            let (ch, cur_) = slice_shift_char(cur).unwrap();
             ctx.cur = Some(cur_);
             match ch {
                 '(' => LParen,
@@ -94,7 +106,7 @@ fn token(ctx: &mut Ctx) -> Option<Tok> {
                 'λ' => Lambda,
                 'Π' => Pi,
                 '→' => Arrow,
-                '-' => match cur_.slice_shift_char() {
+                '-' => match slice_shift_char(cur_) {
                     Some(('>', cur_)) => {
                         ctx.cur = Some(cur_);
                         Arrow
@@ -171,22 +183,6 @@ pub enum Stmt {
     Bind(String, Inferable),
 }
 
-impl Tok {
-    fn as_ident(self) -> String {
-        match self {
-            Tok::Ident(i) => i,
-            _ => panic!("as_ident() invoked with a non-identifier"),
-        }
-    }
-
-    fn as_usize(self) -> usize {
-        match self {
-            Tok::Usize(i) => i,
-            _ => panic!("as_usize() invoked with a non-usize"),
-        }
-    }
-}
-
 impl<'a> Iterator for Ctx<'a> {
     type Item = Tok;
 
@@ -195,7 +191,7 @@ impl<'a> Iterator for Ctx<'a> {
     }
 }
 
-pub fn parse(s: &str) -> Option<Result<(Option<Tok>, Stmt), ()>> {
+pub fn parse(s: &str) -> Option<Result<Stmt, ()>> {
     let s = s.trim_left();
     let mut tokens = s.split_whitespace();
     match tokens.next() {

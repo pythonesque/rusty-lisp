@@ -1,3 +1,3 @@
 /target
-/src/parser/src/gram.rs
+src/parser/src/gram.rs
 /src/parser/target
